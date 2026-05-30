@@ -172,7 +172,29 @@ async def purge_object(object_id: str):
     return result
 
 
-@app.get("/doip/retrieve/{object_id}/{component_id}")
+@app.get("/doip/retrieve/{object_id}")
+async def retrieve_metadata(object_id: str):
+    """Return the RO-Crate metadata for an object as JSON.
+
+    Args:
+        object_id: PID/QID of the target object.
+
+    Returns:
+        dict: RO-Crate metadata from the DOIP server.
+    """
+    log.info("HTTP metadata requested", extra={"object_id": object_id})
+    client = _client()
+    try:
+        response = await asyncio.to_thread(client.retrieve, object_id)
+    except Exception as exc:
+        log.exception("DOIP backend error during metadata retrieve", extra={"object_id": object_id})
+        raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
+    if not response.metadata_blocks:
+        raise HTTPException(status_code=404, detail="Object not found")
+    return response.metadata_blocks[0]
+
+
+@app.get("/doip/retrieve/{object_id}/{component_id:path}")
 async def download_component(object_id: str, component_id: str, force_reload: str | None = Query(None)):
     """Stream a DOIP component to the caller as an HTTP download.
 
@@ -239,9 +261,10 @@ async def download_component(object_id: str, component_id: str, force_reload: st
     )
 
 
-# Serve the previous landing page and assets (background image, favicon) from /app/landing.
-app.mount(
-    "/",
-    StaticFiles(directory="/app/landing", html=True),
-    name="landing",
-)
+_LANDING_CANDIDATES = [
+    Path("/app/landing"),
+    Path(__file__).parent.parent / "docker" / "landing",
+]
+_landing_dir = next((p for p in _LANDING_CANDIDATES if p.is_dir()), None)
+if _landing_dir:
+    app.mount("/", StaticFiles(directory=str(_landing_dir), html=True), name="landing")
