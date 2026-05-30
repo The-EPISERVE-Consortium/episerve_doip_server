@@ -257,7 +257,7 @@ async def download_component(object_id: str, component_id: str, force_reload: st
     return StreamingResponse(
         iter([comp.content]),
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 
