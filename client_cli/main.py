@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
                 # stdout binary
                 sys.stdout.buffer.write(content)
-                logging.getLogger().info(f"\n\n Output contains media type '%s' ", args.output, media_type )
+                logging.getLogger().info("\n\n Output contains media type '%s'", media_type)
                 return 0
 
             # Show only meta data - no binary data
