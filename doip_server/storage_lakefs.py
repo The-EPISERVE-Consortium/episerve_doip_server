@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from functools import lru_cache
 from typing import AsyncGenerator, Dict, List, Tuple
 
@@ -266,6 +267,27 @@ async def reset_uncommitted_object(object_path: str, branch: str | None = None) 
         _lakefs_branch(branch).reset_changes(path_type="object", path=object_path)
 
     await asyncio.to_thread(_reset)
+
+
+async def get_rocrate_metadata(qid: str) -> dict:
+    """Fetch ro-crate-metadata.json for a QID from lakeFS.
+
+    Args:
+        qid: Object identifier/QID.
+
+    Returns:
+        dict: Parsed RO-Crate JSON.
+
+    Raises:
+        KeyError: If the metadata file is not found in storage.
+    """
+    key = f"{_branch()}/{shard_qid(qid)}/ro-crate-metadata.json"
+    log.info("Fetching ro-crate-metadata.json key=%s", key)
+    try:
+        response = await asyncio.to_thread(_client().get_object, Bucket=_repo(), Key=key)
+        return json.loads(response["Body"].read())
+    except Exception as exc:
+        raise KeyError(f"ro-crate-metadata.json not found for {qid}") from exc
 
 
 async def list_components(object_id: str) -> List[str]:

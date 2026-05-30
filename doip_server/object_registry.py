@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Dict, List
-
-import httpx
+from urllib.parse import parse_qs, unquote, urlparse
 
 from . import storage_lakefs
 from .logging_config import log
@@ -17,7 +15,6 @@ class ObjectRegistry:
         """Initialize registry caches and shared state."""
         self._manifest_cache: Dict[str, Dict] = {}
         self._lock = asyncio.Lock()
-        self.fdo_api = os.getenv("FDO_API", "https://fdo.portal.mardi4nfdi.de/fdo/")
 
     async def fetch_fdo_object(self, pid: str) -> Dict:
         """Fetch and cache the FDO JSON-LD for a given PID.
@@ -100,46 +97,56 @@ class ObjectRegistry:
         return await self.fetch_fdo_object(qid)
 
     async def _fetch_manifest(self, qid: str) -> Dict:
-        """Retrieve manifest JSON-LD from the FDO façade.
+        """Retrieve the RO-Crate manifest for an object from lakeFS.
 
         Args:
             qid: Object identifier.
 
         Returns:
-            Dict: Manifest payload.
+            Dict: Parsed RO-Crate JSON.
 
         Raises:
-            httpx.HTTPError: If the remote request fails.
+            KeyError: If ro-crate-metadata.json is not found in storage.
         """
-        url = f"{self.fdo_api}{qid}"
-        log.info("(registry._fetch_manifest) Using FDO API endpoint: %s", self.fdo_api)
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+        log.info("(registry._fetch_manifest) Fetching ro-crate-metadata.json for %s", qid)
+        return await storage_lakefs.get_rocrate_metadata(qid)
 
 
 def _find_component(component_id: str, manifest: Dict) -> Dict | None:
-    """Return the component dict matching ``component_id`` from a manifest.
+    """Return the RO-Crate file entity matching ``component_id``.
+
+    Matches against ``components/{component_id}`` as a relative ``@id``, or
+    extracts the lakeFS path from a full URL ``@id`` and checks the suffix.
 
     Args:
-        component_id: Target component identifier.
-        manifest: FDO JSON-LD manifest.
+        component_id: Target component identifier (e.g. ``input/config.json``).
+        manifest: Parsed RO-Crate dict containing an ``@graph`` list.
 
     Returns:
-        dict | None: Matching component dictionary or ``None`` if not found.
+        dict | None: Matching file entity or ``None`` if not found.
     """
-    kernel = manifest.get("kernel") if isinstance(manifest, dict) else None
-    components = kernel.get("fdo:hasComponent") if isinstance(kernel, dict) else None
-    if not isinstance(components, list):
-        return None
-    for comp in components:
-        if isinstance(comp, dict) and comp.get("componentId") == component_id:
-            return comp
+    graph = manifest.get("@graph", []) if isinstance(manifest, dict) else []
+    target_id = f"components/{component_id}"
+    for entity in graph:
+        entity_type = entity.get("@type")
+        types = [entity_type] if isinstance(entity_type, str) else (entity_type or [])
+        if "File" not in types:
+            continue
+        entity_id = entity.get("@id", "")
+        if entity_id == target_id:
+            return entity
+        if entity_id.startswith(("http://", "https://")):
+            path_param = parse_qs(urlparse(entity_id).query).get("path", [""])[0]
+            if unquote(path_param).endswith(target_id):
+                return entity
     return None
 
 
 def _component_media_type(component: Dict) -> str:
-    """Return the media type for a component dictionary."""
-    media_type = component.get("mediaType") or component.get("mimeType") or "application/octet-stream"
-    return media_type
+    """Return the media type for a RO-Crate file entity."""
+    return (
+        component.get("encodingFormat")
+        or component.get("mediaType")
+        or component.get("mimeType")
+        or "application/octet-stream"
+    )

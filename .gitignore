@@ -9,3 +9,4 @@ certs/server.key
 /dist/
 /.codex
 /.claude/settings.local.json
+/CLAUDE.md

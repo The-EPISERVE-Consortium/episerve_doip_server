@@ -6,12 +6,10 @@ import os
 import ssl
 import struct
 import sys
-from urllib.parse import urlparse, urlunparse
 from argparse import ArgumentParser
 from pathlib import Path
 from functools import partial
 
-import requests
 import yaml
 
 from doip_server.storage_lakefs import ensure_lakefs_available
@@ -20,7 +18,7 @@ from .logging_config import configure_logging, log
 
 configure_logging()
 
-def set_config(args) -> dict:
+def set_config() -> dict:
     """Build configuration from local config.yaml overlaid with environment variables.
 
     Returns:
@@ -42,9 +40,6 @@ def set_config(args) -> dict:
         log.warning("Failed to load config from %s: %s", path, exc)
 
     # If environment variables are set, they override config.yaml values
-
-    fdo_api = os.getenv("FDO_API", "https://fdo.portal.mardi4nfdi.de/fdo/")
-    cfg.setdefault("fdo_api", {})["fdo_api"] = fdo_api
 
     ollama_api_key = os.getenv("OLLAMA_API_KEY")
     if ollama_api_key:
@@ -75,10 +70,6 @@ def set_config(args) -> dict:
             if trimmed_url and not trimmed_url.startswith(("http://", "https://")):
                 lakefs_cfg["url"] = f"https://{trimmed_url}"
                 log.info("Normalized lakefs.url to %s", lakefs_cfg["url"])
-
-    # If command line args are set, they override everything
-    if args.fdo_api:
-        cfg.setdefault("fdo_api", {})["fdo_api"] = args.fdo_api
 
     # Print config
     masked_cfg = _mask_sensitive(cfg)
@@ -458,21 +449,6 @@ def _json_segment(data: dict) -> bytes:
     """
     return json.dumps(data).encode("utf-8")
 
-def _check_fdo_server_avail(url: str) -> bool:
-    if not url:
-        return False
-
-    parsed = urlparse(url)
-    base = urlunparse((parsed.scheme, f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname, "", "", "", ""))
-
-    try:
-        if not requests.get(base, timeout=2).ok:
-            return False
-        return True
-    except Exception:
-        return False
-
-
 async def main(argv: list[str] | None = None):
     """Entrypoint: start the asyncio DOIP TCP server.
 
@@ -486,26 +462,17 @@ async def main(argv: list[str] | None = None):
     # Setup command line parser
     parser = ArgumentParser(description="MaRDI DOIP server")
     parser.add_argument("--port", default="3567", help="Port of this server")
-    parser.add_argument("--fdo-api", help="FDO server url")
     args = parser.parse_args(argv)
 
     # Set port
-    port=int(args.port)
+    port = int(args.port)
 
     # Set config params
-    cfg = set_config(args)
+    cfg = set_config()
     storage_lakefs.configure(cfg)
-
-    # Check for FDO server
-    fdo_api = cfg.get("fdo_api")["fdo_api"]
-    if not _check_fdo_server_avail( fdo_api ):
-        log.error("FDO server not available! (Tried: %s)", fdo_api)
-        sys.exit(1)
-    log.info("DOIP server uses FDO endpoint: %s", fdo_api)
 
     # Initialize registry
     registry = object_registry.ObjectRegistry()
-    registry.fdo_api = fdo_api
 
     # Check for lakeFS availablity
     if not await ensure_lakefs_available():
