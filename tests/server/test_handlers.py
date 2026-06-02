@@ -159,6 +159,55 @@ async def test_retrieve_specific_component(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_retrieve_component_from_fdo_json_manifest(monkeypatch):
+    """Component retrieval works when the manifest uses the FDO JSON kernel structure."""
+
+    async def fake_ensure():
+        return True
+
+    async def fake_get_bytes(qid, comp, repo):
+        return b"parquet-data"
+
+    async def fake_fetch_fdo(pid):
+        return {
+            "@id": pid,
+            "kernel": {
+                "fdo:hasComponent": [
+                    {
+                        "@id": "components/data.parquet",
+                        "componentId": "data.parquet",
+                        "mediaType": "application/vnd.apache.parquet",
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr(handlers.storage_lakefs, "ensure_lakefs_available", fake_ensure)
+    monkeypatch.setattr(handlers.storage_lakefs, "get_component_bytes", fake_get_bytes)
+
+    registry = StubRegistry([])
+    registry.fetch_fdo_object = fake_fetch_fdo
+
+    request = protocol.DOIPMessage(
+        version=protocol.DOIP_VERSION,
+        msg_type=protocol.MSG_TYPE_REQUEST,
+        operation=protocol.OP_RETRIEVE,
+        flags=0,
+        object_id="Q123",
+        metadata_blocks=[{"element": "data.parquet"}],
+    )
+
+    response = await handlers.handle_retrieve(request, registry)
+
+    assert response.metadata_blocks == []
+    assert len(response.component_blocks) == 1
+    comp = response.component_blocks[0]
+    assert comp.component_id == "data.parquet"
+    assert comp.content == b"parquet-data"
+    assert comp.media_type == "application/vnd.apache.parquet"
+
+
+@pytest.mark.asyncio
 async def test_retrieve_component_defaults_when_manifest_missing(monkeypatch):
     """Component retrieval falls back to octet-stream when media type unknown."""
 

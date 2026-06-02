@@ -115,21 +115,26 @@ class ObjectRegistry:
 
 
 def _find_component(component_id: str, manifest: Dict) -> Dict | None:
-    """Return the RO-Crate file entity matching ``component_id``.
+    """Return the file entity matching ``component_id`` from either manifest format.
 
-    Matches against ``components/{component_id}`` as a relative ``@id``, or
-    extracts the lakeFS path from a full URL ``@id`` and checks the suffix.
+    Supports two layouts:
+    - RO-Crate: ``@graph`` list of ``File`` entities with ``@id`` == ``components/{id}``
+    - FDO JSON: ``kernel["fdo:hasComponent"]`` list with ``componentId`` field
 
     Args:
         component_id: Target component identifier (e.g. ``input/config.json``).
-        manifest: Parsed RO-Crate dict containing an ``@graph`` list.
+        manifest: Parsed manifest dict.
 
     Returns:
-        dict | None: Matching file entity or ``None`` if not found.
+        dict | None: Matching component entry or ``None`` if not found.
     """
-    graph = manifest.get("@graph", []) if isinstance(manifest, dict) else []
+    if not isinstance(manifest, dict):
+        return None
+
     target_id = f"components/{component_id}"
-    for entity in graph:
+
+    # RO-Crate: search @graph for File entities
+    for entity in manifest.get("@graph", []):
         entity_type = entity.get("@type")
         types = [entity_type] if isinstance(entity_type, str) else (entity_type or [])
         if "File" not in types:
@@ -141,6 +146,15 @@ def _find_component(component_id: str, manifest: Dict) -> Dict | None:
             path_param = parse_qs(urlparse(entity_id).query).get("path", [""])[0]
             if unquote(path_param).endswith(target_id):
                 return entity
+
+    # FDO JSON: search kernel["fdo:hasComponent"]
+    kernel = manifest.get("kernel", {})
+    for comp in (kernel.get("fdo:hasComponent", []) if isinstance(kernel, dict) else []):
+        if not isinstance(comp, dict):
+            continue
+        if comp.get("componentId") == component_id or comp.get("@id") == target_id:
+            return comp
+
     return None
 
 
