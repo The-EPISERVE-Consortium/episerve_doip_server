@@ -34,20 +34,17 @@ def configure(cfg: Dict) -> None:
         pass
 
 
-def _repo() -> str:
-    """Return repository name for lakeFS-backed storage.
-
-    Returns:
-        str: Repo name.
+def _repos() -> list[str]:
+    """Return ordered list of repository names tried during reads.
 
     Raises:
-        ValueError: if lakeFS repository is not configured.
+        ValueError: if no lakeFS repositories are configured.
     """
     lakefs_cfg = _CFG.get("lakefs", {}) if isinstance(_CFG, dict) else {}
-    repo = lakefs_cfg.get("repo")
-    if not repo:
-        raise ValueError("lakeFS repository is not configured.")
-    return repo
+    repos = lakefs_cfg.get("repos", [])
+    if not repos:
+        raise ValueError("lakeFS repositories are not configured.")
+    return repos
 
 
 def _branch() -> str:
@@ -158,12 +155,14 @@ def build_component_object_path(object_id: str, component_id: str) -> str:
     return build_object_path(qid, component_id)
 
 
-async def get_component_bytes(object_id: str, component_id: str) -> bytes:
+async def get_component_bytes(object_id: str, component_id: str, repo: str) -> bytes:
     """Fetch component content bytes from lakeFS/S3 using sharded paths.
 
     Args:
         object_id: Object identifier/QID.
         component_id: Component identifier (e.g. "fulltext").
+        repo: lakeFS repository name to read from.
+
     Returns:
         bytes: Component content.
 
@@ -173,10 +172,10 @@ async def get_component_bytes(object_id: str, component_id: str) -> bytes:
     qid = _extract_qid(object_id)
     key = build_object_key(qid, component_id)
 
-    log.info("Retrieving lakeFS object key=%s", key)
+    log.info("Retrieving lakeFS object repo=%s key=%s", repo, key)
 
     try:
-        response = await asyncio.to_thread(_client().get_object, Bucket=_repo(), Key=key)
+        response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key)
     except Exception as exc:
         raise KeyError(f"S3 object not found: {key}") from exc
 
@@ -186,6 +185,7 @@ async def put_component_bytes(
     object_id: str,
     component_id: str,
     data: bytes,
+    repo: str,
     media_type: str = "application/octet-stream",
 ) -> str:
     """Store component bytes to lakeFS and return the object key.
@@ -194,6 +194,7 @@ async def put_component_bytes(
         object_id: Object identifier/QID.
         component_id: Component identifier to store.
         data: Content bytes to upload.
+        repo: lakeFS repository name to write to.
         media_type: MIME type stored as object metadata.
 
     Returns:
@@ -204,7 +205,7 @@ async def put_component_bytes(
     key = build_object_key(qid, component_id)
 
     def _upload() -> None:
-        _lakefs_branch().object(object_path).upload(
+        _lakefs_branch(repo=repo).object(object_path).upload(
             data,
             mode="wb",
             content_type=media_type,
@@ -227,29 +228,38 @@ def _lakefs_api_client():
     )
 
 
-def _lakefs_branch(branch: str | None = None):
+def _lakefs_branch(branch: str | None = None, repo: str | None = None):
     """Return a lakeFS branch handle for commit/reset operations."""
     import lakefs
 
-    return lakefs.repository(_repo(), client=_lakefs_api_client()).branch(branch or _branch())
+    return lakefs.repository(repo, client=_lakefs_api_client()).branch(branch or _branch())
 
 
 async def commit_changes(
     message: str,
+    repo: str,
     metadata: Dict[str, str] | None = None,
     branch: str | None = None,
     allow_empty: bool = True,
 ) -> Dict[str, str]:
-    """Create a lakeFS commit on the target branch."""
+    """Create a lakeFS commit on the target branch.
+
+    Args:
+        message: Commit message.
+        repo: lakeFS repository name to commit to.
+        metadata: Optional key/value metadata for the commit.
+        branch: Branch override; defaults to configured branch.
+        allow_empty: Whether to allow commits with no changes.
+    """
 
     def _commit() -> Dict[str, str]:
-        ref = _lakefs_branch(branch).commit(
+        ref = _lakefs_branch(branch, repo=repo).commit(
             message=message,
             metadata=metadata or {},
             allow_empty=allow_empty,
         )
         return {
-            "repo": _repo(),
+            "repo": repo,
             "branch": branch or _branch(),
             "commit_id": ref.id,
         }
@@ -260,41 +270,50 @@ async def commit_changes(
         raise RuntimeError(f"lakeFS commit failed on branch {branch or _branch()}") from exc
 
 
-async def reset_uncommitted_object(object_path: str, branch: str | None = None) -> None:
-    """Reset one uncommitted object path on the target branch."""
+async def reset_uncommitted_object(object_path: str, repo: str, branch: str | None = None) -> None:
+    """Reset one uncommitted object path on the target branch.
+
+    Args:
+        object_path: Branch-relative path of the object to reset.
+        repo: lakeFS repository name.
+        branch: Branch override; defaults to configured branch.
+    """
 
     def _reset() -> None:
-        _lakefs_branch(branch).reset_changes(path_type="object", path=object_path)
+        _lakefs_branch(branch, repo=repo).reset_changes(path_type="object", path=object_path)
 
     await asyncio.to_thread(_reset)
 
 
-async def get_rocrate_metadata(qid: str) -> dict:
-    """Fetch ro-crate-metadata.json for a QID from lakeFS.
+async def get_rocrate_metadata(qid: str) -> tuple[dict, str]:
+    """Fetch ro-crate-metadata.json for a QID, trying each configured repo in order.
 
     Args:
         qid: Object identifier/QID.
 
     Returns:
-        dict: Parsed RO-Crate JSON.
+        tuple[dict, str]: Parsed RO-Crate JSON and the repo it was found in.
 
     Raises:
-        KeyError: If the metadata file is not found in storage.
+        KeyError: If the metadata file is not found in any configured repo.
     """
     key = f"{_branch()}/{shard_qid(qid)}/ro-crate-metadata.json"
-    log.info("Fetching ro-crate-metadata.json key=%s", key)
-    try:
-        response = await asyncio.to_thread(_client().get_object, Bucket=_repo(), Key=key)
-        return json.loads(response["Body"].read())
-    except Exception as exc:
-        raise KeyError(f"ro-crate-metadata.json not found for {qid}") from exc
+    for repo in _repos():
+        log.info("Fetching ro-crate-metadata.json repo=%s key=%s", repo, key)
+        try:
+            response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key)
+            return json.loads(response["Body"].read()), repo
+        except Exception:
+            continue
+    raise KeyError(f"ro-crate-metadata.json not found for {qid} in any configured repo")
 
 
-async def list_components(object_id: str) -> List[str]:
+async def list_components(object_id: str, repo: str) -> List[str]:
     """List component keys under a given object prefix.
 
     Args:
         object_id: Object identifier/QID.
+        repo: lakeFS repository name to list from.
 
     Returns:
         List[str]: Component suffixes stored for the object.
@@ -304,7 +323,7 @@ async def list_components(object_id: str) -> List[str]:
 
     log.info(
         "Listing components repo=%s branch=%s prefix=%s object_id=%s",
-        _repo(),
+        repo,
         _branch(),
         prefix,
         object_id,
@@ -312,7 +331,7 @@ async def list_components(object_id: str) -> List[str]:
 
     paginator = _client().get_paginator("list_objects_v2")
     result: List[str] = []
-    async for page in _async_paginate(paginator, Bucket=_repo(), Prefix=prefix):
+    async for page in _async_paginate(paginator, Bucket=repo, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
             suffix = key[len(prefix):]

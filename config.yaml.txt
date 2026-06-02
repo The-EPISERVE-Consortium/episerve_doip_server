@@ -12,7 +12,9 @@ ollama:
 # LakeFS settings
 lakefs:
   url: 'localhost'
-  repo: 'sandbox'
+  repos:
+    - 'data-processed'
+    - 'model-runs'
   signature_version: 's3v4'
   user: ''
   password: ''

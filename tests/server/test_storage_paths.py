@@ -32,9 +32,9 @@ async def test_get_component_bytes_uses_sharded_path(monkeypatch):
 
     monkeypatch.setattr(storage_lakefs, "_client", lambda: FakeClient())
     monkeypatch.setattr(storage_lakefs.asyncio, "to_thread", fake_to_thread)
-    storage_lakefs.configure({"lakefs": {"repo": "repo-name", "branch": "main"}})
+    storage_lakefs.configure({"lakefs": {"repos": ["repo-name"], "branch": "main"}})
 
-    data = await storage_lakefs.get_component_bytes("Q4", "fulltext.pdf")
+    data = await storage_lakefs.get_component_bytes("Q4", "fulltext.pdf", "repo-name")
 
     assert data == b"data"
     assert calls["bucket"] == "repo-name"
@@ -66,11 +66,11 @@ async def test_put_component_bytes_uses_lakefs_sdk_upload(monkeypatch):
             calls["path"] = path
             return FakeObject()
 
-    monkeypatch.setattr(storage_lakefs, "_lakefs_branch", lambda branch=None: FakeBranch())
+    monkeypatch.setattr(storage_lakefs, "_lakefs_branch", lambda branch=None, repo=None: FakeBranch())
     monkeypatch.setattr(storage_lakefs.asyncio, "to_thread", fake_to_thread)
-    storage_lakefs.configure({"lakefs": {"repo": "repo-name", "branch": "main"}})
+    storage_lakefs.configure({"lakefs": {"repos": ["repo-name"], "branch": "main"}})
 
-    key = await storage_lakefs.put_component_bytes("Q4", "fulltext.pdf", b"data", media_type="application/pdf")
+    key = await storage_lakefs.put_component_bytes("Q4", "fulltext.pdf", b"data", repo="repo-name", media_type="application/pdf")
 
     assert calls["path"] == "00/00/04/Q4/components/fulltext.pdf"
     assert calls["upload"] == {
@@ -100,11 +100,11 @@ async def test_commit_changes_uses_lakefs_sdk_branch(monkeypatch):
             }
             return FakeRef()
 
-    monkeypatch.setattr(storage_lakefs, "_lakefs_branch", lambda branch=None: FakeBranch())
+    monkeypatch.setattr(storage_lakefs, "_lakefs_branch", lambda branch=None, repo=None: FakeBranch())
     monkeypatch.setattr(storage_lakefs.asyncio, "to_thread", fake_to_thread)
-    storage_lakefs.configure({"lakefs": {"repo": "repo-name", "branch": "main"}})
+    storage_lakefs.configure({"lakefs": {"repos": ["repo-name"], "branch": "main"}})
 
-    result = await storage_lakefs.commit_changes("test message", metadata={"op": "update"})
+    result = await storage_lakefs.commit_changes("test message", repo="repo-name", metadata={"op": "update"})
 
     assert calls["commit"]["message"] == "test message"
     assert calls["commit"]["metadata"] == {"op": "update"}
@@ -123,10 +123,10 @@ async def test_reset_uncommitted_object_uses_lakefs_sdk_branch(monkeypatch):
         def reset_changes(self, path_type=None, path=None):
             calls["reset"] = {"path_type": path_type, "path": path}
 
-    monkeypatch.setattr(storage_lakefs, "_lakefs_branch", lambda branch=None: FakeBranch())
+    monkeypatch.setattr(storage_lakefs, "_lakefs_branch", lambda branch=None, repo=None: FakeBranch())
     monkeypatch.setattr(storage_lakefs.asyncio, "to_thread", fake_to_thread)
 
-    await storage_lakefs.reset_uncommitted_object("00/00/04/Q4/components/fulltext.pdf")
+    await storage_lakefs.reset_uncommitted_object("00/00/04/Q4/components/fulltext.pdf", repo="repo-name")
 
     assert calls["reset"] == {
         "path_type": "object",

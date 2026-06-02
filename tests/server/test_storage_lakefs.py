@@ -39,9 +39,9 @@ async def test_storage_lakefs_lists_components_from_config():
 
     logging.getLogger(__name__).debug(
         "test_storage_lakefs_lists_components_from_config() \n "
-        "Using lakeFS configured with \n url: %s repo: %s branch: %s",
+        "Using lakeFS configured with \n url: %s repos: %s branch: %s",
         lakefs_cfg.get("url"),
-        lakefs_cfg.get("repo"),
+        lakefs_cfg.get("repos"),
         lakefs_cfg.get("branch"),
     )
 
@@ -50,7 +50,9 @@ async def test_storage_lakefs_lists_components_from_config():
         pytest.skip("lakeFS endpoint url unavailable; skipping integration test")
 
     object_id = "Q6830878"
-    components = await storage_lakefs.list_components(object_id)
+    repos = lakefs_cfg.get("repos") or []
+    repo = repos[0] if repos else pytest.skip("No repos configured")
+    components = await storage_lakefs.list_components(object_id, repo)
 
     assert isinstance(components, list)
 
@@ -73,7 +75,9 @@ async def test_storage_lakefs_downloads_component_to_tempfile():
     )
 
     object_id = "Q6830878"
-    components = await storage_lakefs.list_components(object_id)
+    repos = lakefs_cfg.get("repos") or []
+    repo = repos[0] if repos else pytest.skip("No repos configured")
+    components = await storage_lakefs.list_components(object_id, repo)
     if not components:
         pytest.skip("No components found for Q6830878 in lakeFS; skipping download test")
 
@@ -84,7 +88,7 @@ async def test_storage_lakefs_downloads_component_to_tempfile():
     )
 
     try:
-        content = await storage_lakefs.get_component_bytes(object_id, component_key)
+        content = await storage_lakefs.get_component_bytes(object_id, component_key, repo)
     except KeyError:
         pytest.skip(f"Component {component_key!r} not retrievable from lakeFS")
 
@@ -122,14 +126,14 @@ async def test_storage_lakefs_can_put_object_to_sandbox():
         **cfg,
         "lakefs": {
             **lakefs_cfg,
-            "repo": "sandbox",
+            "repos": ["sandbox"],
             "branch": "main",
         },
     }
     print(
         "Using lakeFS sandbox credentials "
         f"url={sandbox_cfg['lakefs'].get('url')} "
-        f"repo={sandbox_cfg['lakefs'].get('repo')} "
+        f"repos={sandbox_cfg['lakefs'].get('repos')} "
         f"branch={sandbox_cfg['lakefs'].get('branch')} "
         f"user={sandbox_cfg['lakefs'].get('user')} "
         f"password={sandbox_cfg['lakefs'].get('password')}"
@@ -144,7 +148,7 @@ async def test_storage_lakefs_can_put_object_to_sandbox():
 
     print(f"Attempting sandbox write to lakeFS key: {key}")
 
-    obj = storage_lakefs._lakefs_branch("main").object(key)
+    obj = storage_lakefs._lakefs_branch("main", repo="sandbox").object(key)
     await asyncio.to_thread(
         obj.upload,
         payload,
@@ -153,6 +157,7 @@ async def test_storage_lakefs_can_put_object_to_sandbox():
     response = await asyncio.to_thread(obj.stat)
     commit = await storage_lakefs.commit_changes(
         message=f"Manual sandbox write test for {key}",
+        repo="sandbox",
         metadata={"test": "test_storage_lakefs_can_put_object_to_sandbox", "path": key},
         branch="main",
     )

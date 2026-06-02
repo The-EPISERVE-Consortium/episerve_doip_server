@@ -27,9 +27,12 @@ class StubRegistry:
     async def get_component(self, object_id, component_id):
         for component in self.components:
             if component.get("componentId") == component_id:
-                content = await storage_lakefs.get_component_bytes(object_id, component_id)
+                content = await storage_lakefs.get_component_bytes(object_id, component_id, "test-repo")
                 return content, component.get("mediaType", "application/octet-stream")
         raise KeyError(component_id)
+
+    async def get_repo(self, pid):
+        return "test-repo"
 
     async def purge(self, pid):
         return None
@@ -85,17 +88,17 @@ async def test_client_server_integration_update_and_retrieve_component(monkeypat
     """
     stored = {}
 
-    async def fake_put_component_bytes(object_id, component_id, data, media_type="application/octet-stream"):
+    async def fake_put_component_bytes(object_id, component_id, data, repo, media_type="application/octet-stream"):
         stored[(object_id, component_id)] = (data, media_type)
         return "main/00/01/23/Q123/components/primary.pdf"
 
-    async def fake_commit_changes(message, metadata=None, branch=None, allow_empty=True):
-        return {"repo": "repo", "branch": "main", "commit_id": "commit-123"}
+    async def fake_commit_changes(message, repo, metadata=None, branch=None, allow_empty=True):
+        return {"repo": repo, "branch": "main", "commit_id": "commit-123"}
 
-    async def fake_reset_uncommitted_object(object_path, branch=None):
+    async def fake_reset_uncommitted_object(object_path, repo, branch=None):
         raise AssertionError("reset should not be called in successful update test")
 
-    async def fake_get_component_bytes(object_id, component_id):
+    async def fake_get_component_bytes(object_id, component_id, repo):
         return stored[(object_id, component_id)][0]
 
     monkeypatch.setattr(storage_lakefs, "get_update_token", lambda: "secret")
@@ -156,11 +159,11 @@ async def test_client_server_integration_update_rejects_invalid_token(monkeypatc
     """
     stored = {}
 
-    async def fake_put_component_bytes(object_id, component_id, data, media_type="application/octet-stream"):
+    async def fake_put_component_bytes(object_id, component_id, data, repo, media_type="application/octet-stream"):
         stored[(object_id, component_id)] = (data, media_type)
         raise AssertionError("put_component_bytes should not be called when auth fails")
 
-    async def fake_commit_changes(message, metadata=None, branch=None, allow_empty=True):
+    async def fake_commit_changes(message, repo, metadata=None, branch=None, allow_empty=True):
         raise AssertionError("commit_changes should not be called when auth fails")
 
     monkeypatch.setattr(storage_lakefs, "get_update_token", lambda: "secret")

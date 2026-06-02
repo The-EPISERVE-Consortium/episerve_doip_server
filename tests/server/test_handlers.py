@@ -32,6 +32,12 @@ class StubRegistry(object_registry.ObjectRegistry):
         """Return a minimal manifest to avoid network access during tests."""
         return {"kernel": {"fdo:hasComponent": self._components}}
 
+    async def _resolve(self, pid: str) -> tuple[dict, str]:
+        """Route through fetch_fdo_object so instance-level patches are honoured."""
+        pid = pid.upper()
+        manifest = await self.fetch_fdo_object(pid)
+        return manifest, "test-repo"
+
 
 @pytest.mark.asyncio
 async def test_handle_hello_returns_capabilities():
@@ -111,7 +117,7 @@ async def test_retrieve_fdo_metadata(monkeypatch):
 @pytest.mark.asyncio
 async def test_retrieve_specific_component(monkeypatch):
     async def fake_ensure(): return True
-    async def fake_get_bytes(qid, comp): return b"hello"
+    async def fake_get_bytes(qid, comp, repo): return b"hello"
     async def fake_fetch_fdo(pid):
         return {
             "@graph": [
@@ -159,7 +165,7 @@ async def test_retrieve_component_defaults_when_manifest_missing(monkeypatch):
     async def fake_ensure():
         return True
 
-    async def fake_get_bytes(qid, comp):
+    async def fake_get_bytes(qid, comp, repo):
         return b"content"
 
     async def fake_fetch_fdo(pid):
@@ -216,7 +222,7 @@ async def test_handle_update_stores_component_and_commits(monkeypatch):
     async def fake_fetch_fdo(pid):
         return {"@id": pid}
 
-    async def fake_put_component_bytes(object_id, component_id, data, media_type="application/octet-stream"):
+    async def fake_put_component_bytes(object_id, component_id, data, repo, media_type="application/octet-stream"):
         calls["put"] = {
             "object_id": object_id,
             "component_id": component_id,
@@ -225,16 +231,16 @@ async def test_handle_update_stores_component_and_commits(monkeypatch):
         }
         return "main/00/00/01/Q1/components/primary.pdf"
 
-    async def fake_commit_changes(message, metadata=None, branch=None, allow_empty=True):
+    async def fake_commit_changes(message, repo, metadata=None, branch=None, allow_empty=True):
         calls["commit"] = {
             "message": message,
             "metadata": metadata,
             "branch": branch,
             "allow_empty": allow_empty,
         }
-        return {"branch": "main", "commit_id": "abc123", "repo": "repo"}
+        return {"branch": "main", "commit_id": "abc123", "repo": repo}
 
-    async def fake_reset_uncommitted_object(object_path, branch=None):
+    async def fake_reset_uncommitted_object(object_path, repo, branch=None):
         calls["reset"] = {"object_path": object_path, "branch": branch}
 
     registry = StubRegistry([])
@@ -349,14 +355,14 @@ async def test_handle_update_resets_uncommitted_object_on_commit_failure(monkeyp
     async def fake_fetch_fdo(pid):
         return {"@id": pid}
 
-    async def fake_put_component_bytes(object_id, component_id, data, media_type="application/octet-stream"):
+    async def fake_put_component_bytes(object_id, component_id, data, repo, media_type="application/octet-stream"):
         calls["put"] = True
         return "main/00/00/01/Q1/components/primary"
 
-    async def fake_commit_changes(message, metadata=None, branch=None, allow_empty=True):
+    async def fake_commit_changes(message, repo, metadata=None, branch=None, allow_empty=True):
         raise RuntimeError("commit failed")
 
-    async def fake_reset_uncommitted_object(object_path, branch=None):
+    async def fake_reset_uncommitted_object(object_path, repo, branch=None):
         calls["reset"] = {"object_path": object_path, "branch": branch}
 
     registry = StubRegistry([])
@@ -536,18 +542,8 @@ async def test_handle_invoke_returns_workflow_results(monkeypatch):
         return workflow_result
 
     monkeypatch.setattr(handlers.workflows, "run_equation_extraction_workflow", fake_workflow)
-    async def fake_get_component_bytes(object_id, component_id="primary"):
-        """Return stubbed workflow-derived component bytes.
-
-        Args:
-            object_id: Requested object identifier.
-            component_id: Component identifier being fetched.
-            media_type: Media type (unused).
-            extension: Extension (unused).
-
-        Returns:
-            bytes: Dummy workflow content.
-        """
+    async def fake_get_component_bytes(object_id, component_id="primary", repo=None):
+        """Return stubbed workflow-derived component bytes."""
         return b"{}"
 
     monkeypatch.setattr(handlers.storage_lakefs, "get_component_bytes", fake_get_component_bytes)
@@ -587,7 +583,7 @@ async def test_handle_retrieve_uses_registry_and_storage(monkeypatch):
     registry = StubRegistry()
 
     # verify storage backend is NOT called for metadata PIDs
-    async def fake_get_bytes(qid, comp):
+    async def fake_get_bytes(qid, comp, repo):
         assert False, "Should not fetch bitstream bytes for non-bitstream PID"
 
     async def fake_ensure():

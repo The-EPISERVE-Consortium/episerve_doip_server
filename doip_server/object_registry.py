@@ -13,7 +13,7 @@ class ObjectRegistry:
 
     def __init__(self):
         """Initialize registry caches and shared state."""
-        self._manifest_cache: Dict[str, Dict] = {}
+        self._manifest_cache: Dict[str, tuple[Dict, str]] = {}  # pid -> (manifest, repo)
         self._lock = asyncio.Lock()
 
     async def fetch_fdo_object(self, pid: str) -> Dict:
@@ -25,18 +25,20 @@ class ObjectRegistry:
         Returns:
             Dict: Manifest JSON-LD payload for the PID.
         """
-        pid = pid.upper()
-        async with self._lock:
-            if pid in self._manifest_cache:
-                log.info(f"Cache hit for {pid}.")
-                return self._manifest_cache[pid]
+        manifest, _ = await self._resolve(pid)
+        return manifest
 
-        data = await self._fetch_manifest(pid)
+    async def get_repo(self, pid: str) -> str:
+        """Return the lakeFS repo where the object's metadata was found.
 
-        async with self._lock:
-            self._manifest_cache[pid] = data
+        Args:
+            pid: PID/QID to look up.
 
-        return data
+        Returns:
+            str: Repo name.
+        """
+        _, repo = await self._resolve(pid)
+        return repo
 
     async def purge(self, pid: str) -> None:
         """Remove a PID from the manifest cache, forcing a fresh fetch on next access.
@@ -65,7 +67,7 @@ class ObjectRegistry:
         """
         log.info(f"get_component() for {object_id}/{component_id}")
 
-        manifest = await self.fetch_fdo_object(object_id)
+        manifest, repo = await self._resolve(object_id)
         component = _find_component(component_id, manifest)
         if component is None:
             raise KeyError(f"component-not-found:{component_id}")
@@ -76,14 +78,13 @@ class ObjectRegistry:
             raise ConnectionError()
 
         try:
-            content = await storage_lakefs.get_component_bytes(object_id, component_id)
+            content = await storage_lakefs.get_component_bytes(object_id, component_id, repo)
         except KeyError as exc:
             raise KeyError(f"component-not-found:{component_id}") from exc
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError("storage-backend error") from exc
 
         return content, media_type
-
 
     async def get_manifest(self, qid: str) -> Dict:
         """Return the manifest (FDO JSON) for a base QID.
@@ -96,20 +97,21 @@ class ObjectRegistry:
         """
         return await self.fetch_fdo_object(qid)
 
-    async def _fetch_manifest(self, qid: str) -> Dict:
-        """Retrieve the RO-Crate manifest for an object from lakeFS.
+    async def _resolve(self, pid: str) -> tuple[Dict, str]:
+        """Return (manifest, repo) for a PID, using the cache when available."""
+        pid = pid.upper()
+        async with self._lock:
+            if pid in self._manifest_cache:
+                log.info(f"Cache hit for {pid}.")
+                return self._manifest_cache[pid]
 
-        Args:
-            qid: Object identifier.
+        log.info("(registry._resolve) Fetching ro-crate-metadata.json for %s", pid)
+        manifest, repo = await storage_lakefs.get_rocrate_metadata(pid)
 
-        Returns:
-            Dict: Parsed RO-Crate JSON.
+        async with self._lock:
+            self._manifest_cache[pid] = (manifest, repo)
 
-        Raises:
-            KeyError: If ro-crate-metadata.json is not found in storage.
-        """
-        log.info("(registry._fetch_manifest) Fetching ro-crate-metadata.json for %s", qid)
-        return await storage_lakefs.get_rocrate_metadata(qid)
+        return manifest, repo
 
 
 def _find_component(component_id: str, manifest: Dict) -> Dict | None:

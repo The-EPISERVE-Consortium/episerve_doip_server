@@ -176,6 +176,7 @@ async def handle_update(msg: DOIPMessage, registry: object_registry.ObjectRegist
     _validate_update_token(object_id, metadata)
 
     await registry.fetch_fdo_object(object_id)
+    repo = await registry.get_repo(object_id)
 
     if len(msg.component_blocks) != 1:
         raise protocol.ProtocolError("update requires exactly one component block")
@@ -194,10 +195,12 @@ async def handle_update(msg: DOIPMessage, registry: object_registry.ObjectRegist
             object_id,
             component.component_id,
             component.content,
+            repo=repo,
             media_type=media_type,
         )
         commit = await storage_lakefs.commit_changes(
             message=f"Update {object_id} component {component.component_id}",
+            repo=repo,
             metadata={
                 "operation": "update",
                 "object_id": object_id,
@@ -207,7 +210,7 @@ async def handle_update(msg: DOIPMessage, registry: object_registry.ObjectRegist
         )
     except Exception:
         try:
-            await storage_lakefs.reset_uncommitted_object(object_path)
+            await storage_lakefs.reset_uncommitted_object(object_path, repo=repo)
         except Exception:
             log.exception("Failed to reset uncommitted lakeFS object for %s", object_path)
         raise

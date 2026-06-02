@@ -57,9 +57,9 @@ def set_config() -> dict:
     if lakefs_url:
         cfg.setdefault("lakefs", {})["url"] = lakefs_url
 
-    lakefs_repo = os.getenv("LAKEFS_REPO")
-    if lakefs_repo:
-        cfg.setdefault("lakefs", {})["repo"] = lakefs_repo
+    lakefs_repos = os.getenv("LAKEFS_REPOS")
+    if lakefs_repos:
+        cfg.setdefault("lakefs", {})["repos"] = [r.strip() for r in lakefs_repos.split(",") if r.strip()]
 
     # Check whether lakeFS url has the http/s protocol prefix
     lakefs_cfg = cfg.get("lakefs")
