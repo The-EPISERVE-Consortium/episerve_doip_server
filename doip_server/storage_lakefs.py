@@ -286,26 +286,34 @@ async def reset_uncommitted_object(object_path: str, repo: str, branch: str | No
 
 
 async def get_rocrate_metadata(qid: str) -> tuple[dict, str]:
-    """Fetch ro-crate-metadata.json for a QID, trying each configured repo in order.
+    """Fetch metadata for a QID, trying each configured repo and filename in order.
+
+    For each repo, tries ro-crate-metadata.json first, then {QID}.fdo.json.
 
     Args:
         qid: Object identifier/QID.
 
     Returns:
-        tuple[dict, str]: Parsed RO-Crate JSON and the repo it was found in.
+        tuple[dict, str]: Parsed metadata JSON and the repo it was found in.
 
     Raises:
-        KeyError: If the metadata file is not found in any configured repo.
+        KeyError: If no metadata file is found in any configured repo.
     """
-    key = f"{_branch()}/{shard_qid(qid)}/ro-crate-metadata.json"
+    shard = shard_qid(qid)
+    branch = _branch()
+    candidates = [
+        f"{branch}/{shard}/ro-crate-metadata.json",
+        f"{branch}/{shard}/{qid}.fdo.json",
+    ]
     for repo in _repos():
-        log.info("Fetching ro-crate-metadata.json repo=%s key=%s", repo, key)
-        try:
-            response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key)
-            return json.loads(response["Body"].read()), repo
-        except Exception:
-            continue
-    raise KeyError(f"ro-crate-metadata.json not found for {qid} in any configured repo")
+        for key in candidates:
+            log.info("Fetching metadata repo=%s key=%s", repo, key)
+            try:
+                response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key)
+                return json.loads(response["Body"].read()), repo
+            except Exception:
+                continue
+    raise KeyError(f"No metadata file found for {qid} in any configured repo")
 
 
 async def list_components(object_id: str, repo: str) -> List[str]:

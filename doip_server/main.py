@@ -479,6 +479,7 @@ async def main(argv: list[str] | None = None):
         log.warning("lakeFS server not available!")
     else:
         log.info("DOIP server uses lakeFS server as storage-backend.")
+        log.info("Configured lakeFS repos (probe order): %s", storage_lakefs._repos())
 
     # Check if SSL certificates are available
     ssl_ctx = _maybe_create_ssl_context()
