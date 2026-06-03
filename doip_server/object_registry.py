@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from typing import Dict, List
-from urllib.parse import parse_qs, unquote, urlparse
 
 from . import storage_lakefs
 from .logging_config import log
@@ -105,8 +104,8 @@ class ObjectRegistry:
                 log.info(f"Cache hit for {pid}.")
                 return self._manifest_cache[pid]
 
-        log.info("(registry._resolve) Fetching ro-crate-metadata.json for %s", pid)
-        manifest, repo = await storage_lakefs.get_rocrate_metadata(pid)
+        log.info("(registry._resolve) Fetching FDO metadata for %s", pid)
+        manifest, repo = await storage_lakefs.get_fdo_metadata(pid)
 
         async with self._lock:
             self._manifest_cache[pid] = (manifest, repo)
@@ -115,15 +114,14 @@ class ObjectRegistry:
 
 
 def _find_component(component_id: str, manifest: Dict) -> Dict | None:
-    """Return the file entity matching ``component_id`` from either manifest format.
+    """Return the component entry matching ``component_id`` from an FDO manifest.
 
-    Supports two layouts:
-    - RO-Crate: ``@graph`` list of ``File`` entities with ``@id`` == ``components/{id}``
-    - FDO JSON: ``kernel["fdo:hasComponent"]`` list with ``componentId`` field
+    Searches ``kernel["fdo:hasComponent"]`` for an entry whose ``componentId``
+    or ``@id`` matches the given identifier.
 
     Args:
         component_id: Target component identifier (e.g. ``input/config.json``).
-        manifest: Parsed manifest dict.
+        manifest: Parsed FDO manifest dict.
 
     Returns:
         dict | None: Matching component entry or ``None`` if not found.
@@ -132,22 +130,6 @@ def _find_component(component_id: str, manifest: Dict) -> Dict | None:
         return None
 
     target_id = f"components/{component_id}"
-
-    # RO-Crate: search @graph for File entities
-    for entity in manifest.get("@graph", []):
-        entity_type = entity.get("@type")
-        types = [entity_type] if isinstance(entity_type, str) else (entity_type or [])
-        if "File" not in types:
-            continue
-        entity_id = entity.get("@id", "")
-        if entity_id == target_id:
-            return entity
-        if entity_id.startswith(("http://", "https://")):
-            path_param = parse_qs(urlparse(entity_id).query).get("path", [""])[0]
-            if unquote(path_param).endswith(target_id):
-                return entity
-
-    # FDO JSON: search kernel["fdo:hasComponent"]
     kernel = manifest.get("kernel", {})
     for comp in (kernel.get("fdo:hasComponent", []) if isinstance(kernel, dict) else []):
         if not isinstance(comp, dict):
@@ -159,7 +141,7 @@ def _find_component(component_id: str, manifest: Dict) -> Dict | None:
 
 
 def _component_media_type(component: Dict) -> str:
-    """Return the media type for a RO-Crate file entity."""
+    """Return the media type for an FDO component entry."""
     return (
         component.get("encodingFormat")
         or component.get("mediaType")

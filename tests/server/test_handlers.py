@@ -120,14 +120,15 @@ async def test_retrieve_specific_component(monkeypatch):
     async def fake_get_bytes(qid, comp, repo): return b"hello"
     async def fake_fetch_fdo(pid):
         return {
-            "@graph": [
-                {
-                    "@id": "components/primary.pdf",
-                    "@type": "File",
-                    "name": "primary.pdf",
-                    "encodingFormat": "application/pdf",
-                }
-            ]
+            "kernel": {
+                "fdo:hasComponent": [
+                    {
+                        "@id": "components/primary.pdf",
+                        "componentId": "primary.pdf",
+                        "mediaType": "application/pdf",
+                    }
+                ]
+            }
         }
 
     monkeypatch.setattr(handlers.storage_lakefs, "ensure_lakefs_available", fake_ensure)
@@ -219,13 +220,14 @@ async def test_retrieve_component_defaults_when_manifest_missing(monkeypatch):
 
     async def fake_fetch_fdo(pid):
         return {
-            "@graph": [
-                {
-                    "@id": "components/primary",
-                    "@type": "File",
-                    "name": "primary",
-                }
-            ]
+            "kernel": {
+                "fdo:hasComponent": [
+                    {
+                        "@id": "components/primary",
+                        "componentId": "primary",
+                    }
+                ]
+            }
         }
 
     monkeypatch.setattr(handlers.storage_lakefs, "ensure_lakefs_available", fake_ensure)

@@ -285,10 +285,8 @@ async def reset_uncommitted_object(object_path: str, repo: str, branch: str | No
     await asyncio.to_thread(_reset)
 
 
-async def get_rocrate_metadata(qid: str) -> tuple[dict, str]:
-    """Fetch metadata for a QID, trying each configured repo and filename in order.
-
-    For each repo, tries ro-crate-metadata.json first, then {QID}.fdo.json.
+async def get_fdo_metadata(qid: str) -> tuple[dict, str]:
+    """Fetch FDO metadata for a QID from each configured repo.
 
     Args:
         qid: Object identifier/QID.
@@ -301,19 +299,15 @@ async def get_rocrate_metadata(qid: str) -> tuple[dict, str]:
     """
     shard = shard_qid(qid)
     branch = _branch()
-    candidates = [
-        f"{branch}/{shard}/ro-crate-metadata.json",
-        f"{branch}/{shard}/{qid}.fdo.json",
-    ]
+    key = f"{branch}/{shard}/{qid}.fdo.json"
     for repo in _repos():
-        for key in candidates:
-            log.info("Fetching metadata repo=%s key=%s", repo, key)
-            try:
-                response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key)
-                return json.loads(response["Body"].read()), repo
-            except Exception:
-                continue
-    raise KeyError(f"No metadata file found for {qid} in any configured repo")
+        log.info("Fetching metadata repo=%s key=%s", repo, key)
+        try:
+            response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key)
+            return json.loads(response["Body"].read()), repo
+        except Exception:
+            continue
+    raise KeyError(f"No FDO metadata file found for {qid} in any configured repo")
 
 
 async def list_components(object_id: str, repo: str) -> List[str]:
