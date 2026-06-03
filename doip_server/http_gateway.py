@@ -14,8 +14,8 @@ import ssl
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from doip_client import StrictDOIPClient
@@ -259,6 +259,52 @@ async def download_component(object_id: str, component_id: str, force_reload: st
         media_type=media_type,
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@app.get("/{object_id}", response_class=HTMLResponse)
+async def pid_hint(object_id: str = Path(..., pattern=r"^[Qq]\d+$")):
+    """Return a hint page for bare QID paths like /Q123.
+
+    FastAPI's path validation ensures this only fires for QID-shaped segments,
+    so static assets (/favicon.ico, /background.png, …) still reach the mount.
+    """
+    qid = object_id.upper()
+    retrieve_url = f"/doip/retrieve/{qid}"
+    html = f"""<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Not found – EPISERVE DOIP</title>
+    <link rel="icon" href="/favicon.ico">
+    <style>
+      body {{
+        margin: 0; padding: 0;
+        font-family: Arial, sans-serif;
+        color: #0b132b;
+        background: url('/background_mardi_api.png') no-repeat center center fixed;
+        background-size: cover;
+      }}
+      .overlay {{
+        background-color: rgba(255, 255, 255, 0.85);
+        max-width: 720px;
+        margin: 12vh auto;
+        padding: 32px 36px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      }}
+      a {{ color: #1a73e8; text-decoration: none; font-weight: 600; }}
+      a:hover {{ text-decoration: underline; }}
+      code {{ background: #f1f3f4; padding: 2px 6px; border-radius: 4px; }}
+    </style>
+  </head>
+  <body>
+    <div class="overlay">
+      <p>Nothing found at <code>/{object_id}</code>.</p>
+      <p>Did you mean: <a href="{retrieve_url}">{retrieve_url}</a>?</p>
+    </div>
+  </body>
+</html>"""
+    return HTMLResponse(content=html, status_code=404)
 
 
 _LANDING_CANDIDATES = [
