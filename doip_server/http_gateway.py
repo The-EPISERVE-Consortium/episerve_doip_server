@@ -14,7 +14,7 @@ import ssl
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, HTTPException, Path as FastPath, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -262,7 +262,7 @@ async def download_component(object_id: str, component_id: str, force_reload: st
 
 
 @app.get("/{object_id}", response_class=HTMLResponse)
-async def pid_hint(object_id: str = Path(..., pattern=r"^[Qq]\d+$")):
+async def pid_hint(object_id: str = FastPath(..., pattern=r"^[Qq]\d+$")):
     """Return a hint page for bare QID paths like /Q123.
 
     FastAPI's path validation ensures this only fires for QID-shaped segments,
