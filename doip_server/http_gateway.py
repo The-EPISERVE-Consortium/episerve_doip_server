@@ -14,7 +14,8 @@ import ssl
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Path as FastPath, Query
+from fastapi import FastAPI, HTTPException, Path as FastPath, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -145,6 +146,16 @@ def _client(use_tls: bool | None = None) -> StrictDOIPClient:
 
 app = FastAPI(title="MaRDI DOIP HTTP Gateway")
 
+_cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET"],
+        allow_headers=["Range"],
+        expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
+    )
+
 @app.on_event("startup")
 async def on_startup():
     log.info(
@@ -195,15 +206,21 @@ async def retrieve_metadata(object_id: str):
 
 
 @app.get("/doip/retrieve/{object_id}/{component_id:path}")
-async def download_component(object_id: str, component_id: str, force_reload: str | None = Query(None)):
+async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None)):
     """Stream a DOIP component to the caller as an HTTP download.
 
+    Supports the ``Range`` request header (RFC 7233) so that clients such as
+    DuckDB-wasm can fetch Parquet footers and row-groups without downloading
+    the entire file.
+
     Args:
+        request: Incoming HTTP request (used to read the ``Range`` header).
         object_id: PID/QID of the target object.
         component_id: Component identifier to retrieve.
 
     Returns:
-        StreamingResponse: Component bytes with appropriate HTTP headers.
+        Response: Full (200) or partial (206) component bytes with appropriate
+            HTTP headers including ``Accept-Ranges`` and ``Content-Length``.
 
     Raises:
         HTTPException: When the component is missing or backend errors occur.
@@ -249,16 +266,47 @@ async def download_component(object_id: str, component_id: str, force_reload: st
     comp = response.component_blocks[0]
     media_type = comp.media_type or "application/octet-stream"
     filename = Path(comp.component_id).name or "download"
+    content = comp.content
+    total = len(content)
 
     log.info(
-        "Serving component", extra={"object_id": object_id, "component_id": component_id, "media_type": media_type}
+        "Serving component", extra={"object_id": object_id, "component_id": component_id, "media_type": media_type, "size": total}
     )
 
-    return StreamingResponse(
-        iter([comp.content]),
-        media_type=media_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
-    )
+    base_headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(total),
+    }
+
+    range_header = request.headers.get("range")
+    if range_header:
+        try:
+            spec = range_header.removeprefix("bytes=")
+            start_str, end_str = spec.split("-", 1)
+            start = int(start_str)
+            end = int(end_str) if end_str else total - 1
+            end = min(end, total - 1)
+            if start > end or start >= total:
+                raise HTTPException(
+                    status_code=416,
+                    detail="Range Not Satisfiable",
+                    headers={"Content-Range": f"bytes */{total}"},
+                )
+            chunk = content[start : end + 1]
+            log.info("Serving range bytes=%d-%d/%d", start, end, total, extra={"object_id": object_id})
+            return Response(
+                content=chunk,
+                status_code=206,
+                media_type=media_type,
+                headers={**base_headers, "Content-Range": f"bytes {start}-{end}/{total}", "Content-Length": str(len(chunk))},
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            log.warning("Malformed Range header '%s', serving full content", range_header)
+
+    return Response(content=content, media_type=media_type, headers=base_headers)
 
 
 @app.get("/{object_id}", response_class=HTMLResponse)
