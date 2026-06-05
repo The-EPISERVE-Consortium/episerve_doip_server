@@ -205,6 +205,33 @@ async def retrieve_metadata(object_id: str):
     return response.metadata_blocks[0]
 
 
+@app.head("/doip/retrieve/{object_id}/{component_id:path}")
+async def head_component(object_id: str, component_id: str):
+    """Return headers for a component without the body (RFC 7231 HEAD semantics).
+
+    Needed because FastAPI does not automatically handle HEAD for routes with
+    ``{param:path}`` typed parameters. Clients such as ckanext-parquet perform
+    a HEAD check before fetching; without this handler they receive 404.
+    """
+    client = _client()
+    try:
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
+    if not response.component_blocks:
+        raise HTTPException(status_code=404, detail="Component not found")
+    comp = response.component_blocks[0]
+    return Response(
+        status_code=200,
+        media_type=comp.media_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{Path(comp.component_id).name or "download"}"',
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(len(comp.content)),
+        },
+    )
+
+
 @app.get("/doip/retrieve/{object_id}/{component_id:path}")
 async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None)):
     """Stream a DOIP component to the caller as an HTTP download.
