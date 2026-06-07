@@ -1,107 +1,114 @@
-# Episerve DOIP Server
+# EPISERVE DOIP Server
 
-Asyncio-based DOIP 2.0 TCP server that fronts the EPISERVE FDO infrastructure. The server listens on port 3567, uses strict DOIP binary envelopes, streams components from lakeFS (S3-compatible), and integrates with the FDO FastAPI façade and a MediaWiki/Wikibase backend for derived items.
+Asyncio-based DOIP 2.0 TCP server that exposes EPISERVE FAIR Digital Objects over the Digital Object Interface Protocol. Streams object components directly from lakeFS (`data-processed` and `model-runs` repositories) and integrates with a MediaWiki/Wikibase backend for derived items.
 
-## Documentation
-[![Documentation](https://img.shields.io/badge/docs-gh--pages-blue)](https://mardi4nfdi.github.io/mardi_doip_server/)
+## Ports
 
-- Built with MkDocs; see `docs/build_docs.sh` or browse source in `docs/content/`.
+| Port | Protocol | Description |
+|---|---|---|
+| `3567` | TCP (binary DOIP) | Primary DOIP 2.0 listener (strict binary envelopes) |
+| `3568` | TCP (JSON-segmented) | Compat listener for legacy `doipy`-style clients |
+| `80` | HTTP | Gateway: `/doip/retrieve/{object_id}/{component_id}` |
 
+## Supported operations
 
+`hello`, `retrieve`, `update`, `invoke`, `list_ops`, `purge`
 
-## Getting Started
-- Requirements: 
-  - `pip install -r requirements.txt`.
-- Configuration:
-  - Either create `config.yaml` and set configuration details.
-  - Or use environment variables - they override values from the config file where applicable
-    - `LAKEFS_USER` / `LAKEFS_PASSWORD` 
-    - `LAKEFS_URL` / `LAKEFS_REPO`
-    - `FDO_API`
-    - `OLLAMA_API_KEY`
+## Getting started
 
-Run the server:
+**Requirements:**
+
 ```bash
-python -m doip_server.main           # binds 0.0.0.0:3567
-```
-or, to use a custom FDO server endpoint:
-```bash
-python -m doip_server.main --fdo-api http://127.0.0.1:8000/fdo/
+pip install -r requirements.txt
 ```
 
+**Configuration** — either create `config.yaml` or set environment variables (env vars override the config file):
+
+| Variable | Description |
+|---|---|
+| `LAKEFS_USER` | lakeFS username |
+| `LAKEFS_PASSWORD` | lakeFS password |
+| `LAKEFS_URL` | lakeFS endpoint, e.g. `https://lake-episerve.zib.de` |
+| `LAKEFS_REPOS` | Comma-separated list of lakeFS repos to serve, e.g. `data-processed,model-runs` |
+| `OLLAMA_API_KEY` | Ollama API key (optional, for invoke workflows) |
+
+**Run the server:**
+
+```bash
+python -m doip_server.main           # binds 0.0.0.0:3567 (compat on 3568)
+python -m doip_server.main --port 3567
+```
 
 ## Getting started with Docker
 
-The Docker version has an additional HTTP gateway to use the DOIP service.  
-Example: `/doip/retrieve/{object_id}/{component_id}` (This would stream the given component as file download.)
-Or, using curl:
-```bash
-curl -OJ http://localhost/doip/retrieve/Q123/fulltext
-```
+The Docker image (`docker/Dockerfile`) bundles the server plus the HTTP gateway (nginx).
 
 Build the image (from repo root):
+
 ```bash
-docker build -f docker/Dockerfile -t mardi-doip .
+docker build -f docker/Dockerfile -t episerve-doip .
 ```
 
-Run with TLS (default self-signed cert generated during build):
+Run:
+
 ```bash
 docker run --rm \
   -p 80:80 -p 3567:3567 -p 3568:3568 \
-  -e FDO_API=https://fdo.portal.mardi4nfdi.de/fdo/ \
-  -e LAKEFS_URL=<your-lakefs-url> \
-  -e LAKEFS_USER=<user> -e LAKEFS_PASSWORD=<pass> -e LAKEFS_REPO=<repo> \
-  mardi-doip
+  -e LAKEFS_URL=https://lake-episerve.zib.de \
+  -e LAKEFS_USER=<user> -e LAKEFS_PASSWORD=<pass> \
+  -e LAKEFS_REPOS=data-processed,model-runs \
+  episerve-doip
 ```
 
-Example hello via client CLI against the container:
+HTTP gateway example (streams the component as a file download):
+
+```bash
+curl -OJ http://localhost/doip/retrieve/Q1748526042817/components/output/predictions.tsv
+```
+
+## Using the client CLI
+
+Hello:
+
 ```bash
 python -m client_cli.main --host localhost --port 3567 --action hello
 ```
 
-## Examples
-
-### Run the client CLI:
-
-Retrieve meta-data about an FDO, e.g. a publication with QID Q6190920:
+Retrieve FDO metadata for a model run:
 
 ```bash
-PYTHONPATH=. python -m client_cli.main --host 127.0.0.1 --no-tls --action retrieve --object-id Q6190920 
+PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action retrieve \
+  --object-id Q1748526042817
 ```
 
-Retrieve the fulltext pdf from a FDO publication:
+Retrieve a component (predictions file):
 
 ```bash
-PYTHONPATH=. python -m client_cli.main --host 127.0.0.1 --no-tls --action retrieve --object-id Q6190920 --component fulltext.pdf --output pdf.pdf
+PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action retrieve \
+  --object-id Q1748526042817 --component components/output/predictions.tsv \
+  --output predictions.tsv
 ```
 
-Update one component on an existing FDO and create a mandatory lakeFS commit:
+Update a component:
 
 ```bash
-PYTHONPATH=. python -m client_cli.main --host 127.0.0.1 --no-tls --action update --object-id Q6190920 --component fulltext.pdf --input pdf.pdf --media-type application/pdf
+PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action update \
+  --object-id Q1748526042817 --component components/output/predictions.tsv \
+  --input predictions.tsv --media-type text/tab-separated-values
 ```
 
+Component IDs are exact storage names — no extension is added automatically.
 
-### Use the DOIP client in Python:
+## Using the Python client
+
 ```python
 from doip_client import StrictDOIPClient
 
-client = StrictDOIPClient(host="127.0.0.1", port=3567, use_tls=False)
+client = StrictDOIPClient(host="doip.episerve.zib.de", port=3567, use_tls=False)
 hello = client.hello()
-metadata = client.retrieve("Q123").metadata_blocks
-update = client.update_component("Q123", "fulltext.pdf", b"pdf-bytes", media_type="application/pdf")
+metadata = client.retrieve("Q1748526042817").metadata_blocks
 ```
 
-Component IDs are exact storage names. No file extension is added automatically. If you store `fulltext`, retrieve `fulltext`. If you store `fulltext.pdf`, retrieve `fulltext.pdf`.
+## TLS
 
-## TLS (optional):
-- Place `certs/server.crt` and `certs/server.key` (PEM) to enable TLS automatically; otherwise the server speaks plaintext DOIP.
-- A compatibility listener runs on port 3568 (same TLS setting) accepting doipy JSON-segmented requests and bridging to the DOIP handlers.
-
-
-# Latest Development CLI Build
-
-
-[![Build Status](https://github.com/MaRDI4NFDI/mardi_doip_server/actions/workflows/build-doip-cli-binary.yml/badge.svg)](https://github.com/MaRDI4NFDI/mardi_doip_server/actions/workflows/build-doip-cli-binary.yml)
-
-Download the latest CLI binaries (Windows/macOS/Linux) from the **Artifacts** section of the most recent successful run.
+Place `certs/server.crt` and `certs/server.key` (PEM) to enable TLS automatically. Without them the server speaks plaintext. The compat listener on port 3568 uses the same TLS setting.
