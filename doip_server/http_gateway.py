@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import asyncio
 import ssl
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -202,7 +203,12 @@ async def list_versions(object_id: str):
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
     if not response.metadata_blocks:
         raise HTTPException(status_code=404, detail="Object not found")
-    return response.metadata_blocks[0]
+    result = response.metadata_blocks[0]
+    for version in result.get("versions", []):
+        ts = version.get("timestamp")
+        if ts is not None:
+            version["timestamp_iso8601"] = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    return result
 
 
 @app.get("/doip/retrieve/{object_id}")
