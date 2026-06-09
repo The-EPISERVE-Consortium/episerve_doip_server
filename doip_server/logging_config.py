@@ -1,4 +1,4 @@
-"""Logging setup helpers for the MaRDI DOIP server."""
+"""Logging setup helpers for the EPISERVE DOIP server."""
 
 from __future__ import annotations
 

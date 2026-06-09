@@ -31,7 +31,7 @@ async def handle_hello(msg: DOIPMessage, registry: object_registry.ObjectRegistr
     metadata_block = {
         "operation": "hello",
         "status": "ok",
-        "server": "mardi_doip_server",
+        "server": "episerve_doip_server",
         "version": protocol.DOIP_VERSION,
         "availableOperations": {
             "hello": protocol.OP_HELLO,

@@ -1,4 +1,4 @@
-"""Client-side utilities for interacting with the Mardi DOIP server."""
+"""Client-side utilities for interacting with the EPISERVE DOIP server."""
 
 from .client import StrictDOIPClient
 

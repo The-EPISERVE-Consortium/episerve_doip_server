@@ -460,7 +460,7 @@ async def main(argv: list[str] | None = None):
     """
 
     # Setup command line parser
-    parser = ArgumentParser(description="MaRDI DOIP server")
+    parser = ArgumentParser(description="EPISERVE DOIP server")
     parser.add_argument("--port", default="3567", help="Port of this server")
     args = parser.parse_args(argv)
 

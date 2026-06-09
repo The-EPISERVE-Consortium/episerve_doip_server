@@ -144,7 +144,7 @@ def _client(use_tls: bool | None = None) -> StrictDOIPClient:
     )
 
 
-app = FastAPI(title="MaRDI DOIP HTTP Gateway")
+app = FastAPI(title="EPISERVE DOIP HTTP Gateway")
 
 _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if _cors_origins:

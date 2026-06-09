@@ -104,14 +104,14 @@ jobs:
           venv\Scripts\Activate.ps1
           pyinstaller `
             --onefile client_cli\main.py `
-            --name mardi-doip-cli `
+            --name episerve-doip-cli `
             --console `
             --hidden-import=anyio `
             --hidden-import=sniffio `
             --hidden-import=h11 `
             --clean `
             --log-level=WARN
-          certutil -hashfile dist\mardi-doip-cli.exe SHA256 > dist\checksum.txt
+          certutil -hashfile dist\episerve-doip-cli.exe SHA256 > dist\checksum.txt
         shell: pwsh
 
       - name: Build binary (Unix)
@@ -120,14 +120,14 @@ jobs:
           source venv/bin/activate
           pyinstaller \
             --onefile client_cli/main.py \
-            --name mardi-doip-cli \
+            --name episerve-doip-cli \
             --console \
             --hidden-import=anyio \
             --hidden-import=sniffio \
             --hidden-import=h11 \
             --clean \
             --log-level=WARN
-          sha256sum dist/mardi-doip-cli > dist/checksum.txt
+          sha256sum dist/episerve-doip-cli > dist/checksum.txt
         shell: bash
 
       # =========================
@@ -136,9 +136,9 @@ jobs:
       - name: Upload CLI binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mardi-doip-cli-${{ matrix.os }}
+          name: episerve-doip-cli-${{ matrix.os }}
           path: |
-            dist/mardi-doip-cli*
+            dist/episerve-doip-cli*
             dist/checksum.txt
           if-no-files-found: error
           overwrite: true
@@ -156,9 +156,9 @@ jobs:
 
       - name: Rename binaries for release
         run: |
-          cp artifacts/mardi-doip-cli-ubuntu-22.04/mardi-doip-cli       episerve-doip-cli-linux
-          cp artifacts/mardi-doip-cli-macos-latest/mardi-doip-cli        episerve-doip-cli-macos
-          cp artifacts/mardi-doip-cli-windows-latest/mardi-doip-cli.exe  episerve-doip-cli-windows.exe
+          cp artifacts/episerve-doip-cli-ubuntu-22.04/episerve-doip-cli       episerve-doip-cli-linux
+          cp artifacts/episerve-doip-cli-macos-latest/episerve-doip-cli        episerve-doip-cli-macos
+          cp artifacts/episerve-doip-cli-windows-latest/episerve-doip-cli.exe  episerve-doip-cli-windows.exe
 
       - name: Create GitHub Release
         env:
