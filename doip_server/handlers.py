@@ -94,6 +94,9 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
     pid    = msg.object_id.upper()
     meta   = (msg.metadata_blocks[0] if msg.metadata_blocks else {})
     element   = meta.get("element")  # componentId or None
+    version = meta.get("version") or None
+    if version == "latest":
+        version = None
 
     log.info("handle_retrieve() for object_id=%s", pid)
 
@@ -140,7 +143,7 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
 
     if element:
         try:
-            content, media_type = await registry.get_component(pid, element)
+            content, media_type = await registry.get_component(pid, element, version=version)
             size = len(content)
         except Exception as exc:
             raise KeyError(f"Component id not found: {element}") from exc

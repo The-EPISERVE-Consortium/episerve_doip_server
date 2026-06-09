@@ -50,12 +50,13 @@ class ObjectRegistry:
             self._manifest_cache.pop(pid, None)
         log.info(f"Cache purged for {pid}.")
 
-    async def get_component(self, object_id: str, component_id: str) -> tuple[bytes, str]:
+    async def get_component(self, object_id: str, component_id: str, version: str | None = None) -> tuple[bytes, str]:
         """Resolve a component via manifest and load its bytes from storage.
 
         Args:
             object_id: PID/QID containing the component.
             component_id: Identifier of the component to load.
+            version: Commit ID to read from, or None/"latest" for the current branch.
 
         Returns:
             tuple[bytes, str]: Component content and resolved media type.
@@ -64,7 +65,7 @@ class ObjectRegistry:
             RuntimeError: When the storage backend is unavailable or errors.
             KeyError: When the component is missing.
         """
-        log.info(f"get_component() for {object_id}/{component_id}")
+        log.info(f"get_component() for {object_id}/{component_id} version={version}")
 
         manifest, repo = await self._resolve(object_id)
         component = _find_component(component_id, manifest)
@@ -77,7 +78,7 @@ class ObjectRegistry:
             raise ConnectionError()
 
         try:
-            content = await storage_lakefs.get_component_bytes(object_id, component_id, repo)
+            content = await storage_lakefs.get_component_bytes(object_id, component_id, repo, version=version)
         except KeyError as exc:
             raise KeyError(f"component-not-found:{component_id}") from exc
         except Exception as exc:  # noqa: BLE001

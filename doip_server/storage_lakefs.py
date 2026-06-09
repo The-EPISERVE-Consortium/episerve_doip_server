@@ -155,13 +155,14 @@ def build_component_object_path(object_id: str, component_id: str) -> str:
     return build_object_path(qid, component_id)
 
 
-async def get_component_bytes(object_id: str, component_id: str, repo: str) -> bytes:
+async def get_component_bytes(object_id: str, component_id: str, repo: str, version: str | None = None) -> bytes:
     """Fetch component content bytes from lakeFS/S3 using sharded paths.
 
     Args:
         object_id: Object identifier/QID.
         component_id: Component identifier (e.g. "fulltext").
         repo: lakeFS repository name to read from.
+        version: Commit ID to read from, or None/"latest" for the current branch.
 
     Returns:
         bytes: Component content.
@@ -170,7 +171,8 @@ async def get_component_bytes(object_id: str, component_id: str, repo: str) -> b
         KeyError: If the component is not found in storage.
     """
     qid = _extract_qid(object_id)
-    key = build_object_key(qid, component_id)
+    ref = version if (version and version != "latest") else None
+    key = build_object_key(qid, component_id, branch=ref)
 
     log.info("Retrieving lakeFS object repo=%s key=%s", repo, key)
 

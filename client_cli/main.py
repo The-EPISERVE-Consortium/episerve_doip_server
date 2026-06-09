@@ -129,6 +129,11 @@ def main(argv: list[str] | None = None) -> int:
         default="{}",
         help="Workflow params as JSON string (for invoke)",
     )
+    parser.add_argument(
+        "--version",
+        default="latest",
+        help="Commit ID to retrieve (retrieve action only). Defaults to latest.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -154,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.action == "retrieve":
             if args.component:
-                r = client.retrieve(args.object_id, component_id=args.component)
+                r = client.retrieve(args.object_id, component_id=args.component, version=args.version)
                 blocks = r.component_blocks
                 if not blocks:
                     logging.getLogger().error("Component %s not found.", args.component)

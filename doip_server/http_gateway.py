@@ -234,7 +234,7 @@ async def retrieve_metadata(object_id: str):
 
 
 @app.head("/doip/retrieve/{object_id}/{component_id:path}")
-async def head_component(object_id: str, component_id: str):
+async def head_component(object_id: str, component_id: str, version: str = Query("latest")):
     """Return headers for a component without the body (RFC 7231 HEAD semantics).
 
     Needed because FastAPI does not automatically handle HEAD for routes with
@@ -243,7 +243,7 @@ async def head_component(object_id: str, component_id: str):
     """
     client = _client()
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
     if not response.component_blocks:
@@ -261,7 +261,7 @@ async def head_component(object_id: str, component_id: str):
 
 
 @app.get("/doip/retrieve/{object_id}/{component_id:path}")
-async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None)):
+async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None), version: str = Query("latest")):
     """Stream a DOIP component to the caller as an HTTP download.
 
     Supports the ``Range`` request header (RFC 7233) so that clients such as
@@ -290,7 +290,7 @@ async def download_component(request: Request, object_id: str, component_id: str
         except Exception as exc:
             log.warning("Purge before reload failed, proceeding anyway", extra={"object_id": object_id}, exc_info=exc)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version)
     except ssl.SSLError as exc:
         log.warning(
             "TLS handshake with DOIP backend failed; retrying without TLS",
@@ -298,7 +298,7 @@ async def download_component(request: Request, object_id: str, component_id: str
             exc_info=exc,
         )
         client = _client(use_tls=False)
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version)
     except ConnectionError as exc:
         log.error(
             "Connection to DOIP backend closed unexpectedly; verify DOIP_BACKEND_HOST/PORT and TLS settings",
