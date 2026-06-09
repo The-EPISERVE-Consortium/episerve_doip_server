@@ -117,7 +117,7 @@ async def test_retrieve_fdo_metadata(monkeypatch):
 @pytest.mark.asyncio
 async def test_retrieve_specific_component(monkeypatch):
     async def fake_ensure(): return True
-    async def fake_get_bytes(qid, comp, repo): return b"hello"
+    async def fake_get_bytes(qid, comp, repo, version=None): return b"hello"
     async def fake_fetch_fdo(pid):
         return {
             "kernel": {
@@ -166,7 +166,7 @@ async def test_retrieve_component_from_fdo_json_manifest(monkeypatch):
     async def fake_ensure():
         return True
 
-    async def fake_get_bytes(qid, comp, repo):
+    async def fake_get_bytes(qid, comp, repo, version=None):
         return b"parquet-data"
 
     async def fake_fetch_fdo(pid):
@@ -215,7 +215,7 @@ async def test_retrieve_component_defaults_when_manifest_missing(monkeypatch):
     async def fake_ensure():
         return True
 
-    async def fake_get_bytes(qid, comp, repo):
+    async def fake_get_bytes(qid, comp, repo, version=None):
         return b"content"
 
     async def fake_fetch_fdo(pid):
@@ -634,7 +634,7 @@ async def test_handle_retrieve_uses_registry_and_storage(monkeypatch):
     registry = StubRegistry()
 
     # verify storage backend is NOT called for metadata PIDs
-    async def fake_get_bytes(qid, comp, repo):
+    async def fake_get_bytes(qid, comp, repo, version=None):
         assert False, "Should not fetch bitstream bytes for non-bitstream PID"
 
     async def fake_ensure():
@@ -670,7 +670,7 @@ async def test_retrieve_versions_returns_commit_history(monkeypatch):
         {"commit_id": "def456", "timestamp": 1699999000, "message": "upload", "committer": "bob"},
     ]
 
-    async def fake_list_versions(qid, repo):
+    async def fake_list_versions(qid, repo, limit=None):
         return fake_versions
 
     monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
@@ -701,7 +701,7 @@ async def test_retrieve_versions_returns_commit_history(monkeypatch):
 async def test_retrieve_versions_raises_when_object_not_found(monkeypatch):
     """Versions element propagates KeyError when the object is absent from all repos."""
 
-    async def fake_list_versions(qid, repo):
+    async def fake_list_versions(qid, repo, limit=None):
         raise AssertionError("list_versions_for_object should not be called for unknown objects")
 
     monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
@@ -729,7 +729,7 @@ async def test_retrieve_versions_raises_when_object_not_found(monkeypatch):
 async def test_retrieve_versions_returns_empty_list_when_no_commits(monkeypatch):
     """Versions element returns an empty list when no commits touch the object."""
 
-    async def fake_list_versions(qid, repo):
+    async def fake_list_versions(qid, repo, limit=None):
         return []
 
     monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)

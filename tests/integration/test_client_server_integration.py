@@ -24,7 +24,7 @@ class StubRegistry:
     async def fetch_bitstream_bytes(self, pid):
         return b"hello-bytes"
 
-    async def get_component(self, object_id, component_id):
+    async def get_component(self, object_id, component_id, version=None):
         for component in self.components:
             if component.get("componentId") == component_id:
                 content = await storage_lakefs.get_component_bytes(object_id, component_id, "test-repo")
