@@ -355,6 +355,38 @@ async def _async_paginate(paginator, **kwargs) -> AsyncGenerator[Dict, None]:
     for page in await asyncio.to_thread(lambda: list(paginator.paginate(**kwargs))):
         yield page
 
+async def list_versions_for_object(qid: str, repo: str) -> List[Dict]:
+    """Return the commit history for a QID from lakeFS, newest first.
+
+    Args:
+        qid: Bare QID (e.g. "Q1748526042817"), already normalised to uppercase.
+        repo: lakeFS repository name the object lives in.
+
+    Returns:
+        List[Dict]: Version dicts with keys commit_id, timestamp, message, committer.
+        Empty list when no commits touch the object prefix.
+    """
+    prefix = shard_qid(qid) + "/"
+
+    def _collect() -> List[Dict]:
+        branch = _lakefs_branch(repo=repo)
+        return [
+            {
+                "commit_id": commit.id,
+                "timestamp": commit.creation_date,
+                "message": commit.message,
+                "committer": commit.committer,
+            }
+            for commit in branch.log(prefixes=[prefix])
+        ]
+
+    try:
+        return await asyncio.to_thread(_collect)
+    except Exception as exc:
+        log.warning("list_versions_for_object failed for qid=%s repo=%s: %s", qid, repo, exc)
+        raise
+
+
 def _extract_qid(object_id: str) -> str:
     """Normalize and validate an object identifier, returning its QID prefix.
 

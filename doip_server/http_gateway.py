@@ -183,6 +183,28 @@ async def purge_object(object_id: str):
     return result
 
 
+@app.get("/doip/versions/{object_id}")
+async def list_versions(object_id: str):
+    """Return the commit history for an object as a JSON list.
+
+    Args:
+        object_id: PID/QID of the target object.
+
+    Returns:
+        dict: Version list from the DOIP server.
+    """
+    log.info("HTTP versions requested", extra={"object_id": object_id})
+    client = _client()
+    try:
+        response = await asyncio.to_thread(client.retrieve, object_id, "versions")
+    except Exception as exc:
+        log.exception("DOIP backend error during versions retrieve", extra={"object_id": object_id})
+        raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
+    if not response.metadata_blocks:
+        raise HTTPException(status_code=404, detail="Object not found")
+    return response.metadata_blocks[0]
+
+
 @app.get("/doip/retrieve/{object_id}")
 async def retrieve_metadata(object_id: str):
     """Return the RO-Crate metadata for an object as JSON.

@@ -662,6 +662,96 @@ async def test_handle_retrieve_uses_registry_and_storage(monkeypatch):
 
 
 
+@pytest.mark.asyncio
+async def test_retrieve_versions_returns_commit_history(monkeypatch):
+    """Versions element returns a metadata block containing the commit list."""
+    fake_versions = [
+        {"commit_id": "abc123", "timestamp": 1700000000, "message": "initial", "committer": "alice"},
+        {"commit_id": "def456", "timestamp": 1699999000, "message": "upload", "committer": "bob"},
+    ]
+
+    async def fake_list_versions(qid, repo):
+        return fake_versions
+
+    monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
+    registry = StubRegistry([])
+
+    request = protocol.DOIPMessage(
+        version=protocol.DOIP_VERSION,
+        msg_type=protocol.MSG_TYPE_REQUEST,
+        operation=protocol.OP_RETRIEVE,
+        flags=0,
+        object_id="Q123",
+        metadata_blocks=[{"element": "versions"}],
+    )
+
+    response = await handlers.handle_retrieve(request, registry)
+
+    assert response.msg_type == protocol.MSG_TYPE_RESPONSE
+    assert response.operation == protocol.OP_RETRIEVE
+    assert response.component_blocks == []
+    assert len(response.metadata_blocks) == 1
+    meta = response.metadata_blocks[0]
+    assert meta["element"] == "versions"
+    assert meta["objectId"] == "Q123"
+    assert meta["versions"] == fake_versions
+
+
+@pytest.mark.asyncio
+async def test_retrieve_versions_raises_when_object_not_found(monkeypatch):
+    """Versions element propagates KeyError when the object is absent from all repos."""
+
+    async def fake_list_versions(qid, repo):
+        raise AssertionError("list_versions_for_object should not be called for unknown objects")
+
+    monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
+    registry = StubRegistry([])
+
+    async def failing_get_repo(pid):
+        raise KeyError(f"Not found: {pid}")
+
+    registry.get_repo = failing_get_repo
+
+    request = protocol.DOIPMessage(
+        version=protocol.DOIP_VERSION,
+        msg_type=protocol.MSG_TYPE_REQUEST,
+        operation=protocol.OP_RETRIEVE,
+        flags=0,
+        object_id="Q999",
+        metadata_blocks=[{"element": "versions"}],
+    )
+
+    with pytest.raises(KeyError, match="Q999"):
+        await handlers.handle_retrieve(request, registry)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_versions_returns_empty_list_when_no_commits(monkeypatch):
+    """Versions element returns an empty list when no commits touch the object."""
+
+    async def fake_list_versions(qid, repo):
+        return []
+
+    monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
+    registry = StubRegistry([])
+
+    request = protocol.DOIPMessage(
+        version=protocol.DOIP_VERSION,
+        msg_type=protocol.MSG_TYPE_REQUEST,
+        operation=protocol.OP_RETRIEVE,
+        flags=0,
+        object_id="Q123",
+        metadata_blocks=[{"element": "versions"}],
+    )
+
+    response = await handlers.handle_retrieve(request, registry)
+
+    meta = response.metadata_blocks[0]
+    assert meta["element"] == "versions"
+    assert meta["objectId"] == "Q123"
+    assert meta["versions"] == []
+
+
 def _load_config_or_skip() -> dict:
     """Load config.yaml from repo root or skip if unavailable/invalid."""
     cfg_path = Path(__file__).resolve().parents[2] / "config.yaml"

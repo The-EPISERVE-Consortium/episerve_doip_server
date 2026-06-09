@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--component", default=None, help="Component ID for selective retrieve; if absent, list components")
     parser.add_argument(
         "--action",
-        choices=["demo", "hello", "list_ops", "retrieve", "update", "invoke", "purge"],
+        choices=["demo", "hello", "list_ops", "retrieve", "versions", "update", "invoke", "purge"],
         help="Action to execute",
     )
     # component removed: server no longer supports component selection
@@ -181,6 +181,15 @@ def main(argv: list[str] | None = None) -> int:
             print("Metadata:")
             print(json.dumps(r.metadata_blocks, indent=2))
 
+            return 0
+
+        if args.action == "versions":
+            r = client.retrieve(args.object_id, "versions")
+            if not r.metadata_blocks:
+                logging.getLogger().error("Object %s not found.", args.object_id)
+                return 1
+            versions = r.metadata_blocks[0].get("versions", [])
+            print(json.dumps(versions, indent=2))
             return 0
 
         if args.action == "invoke":
