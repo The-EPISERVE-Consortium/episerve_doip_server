@@ -130,7 +130,10 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
         except KeyError:
             raise KeyError(f"Object not found: {pid}")
         qid = storage_lakefs._extract_qid(pid)
-        versions = await storage_lakefs.list_versions_for_object(qid, repo)
+        limit = meta.get("limit")
+        if limit is not None:
+            limit = int(limit)
+        versions = await storage_lakefs.list_versions_for_object(qid, repo, limit=limit)
         return DOIPMessage(
             version=protocol.DOIP_VERSION,
             msg_type=protocol.MSG_TYPE_RESPONSE,

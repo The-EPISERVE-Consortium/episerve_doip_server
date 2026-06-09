@@ -357,12 +357,13 @@ async def _async_paginate(paginator, **kwargs) -> AsyncGenerator[Dict, None]:
     for page in await asyncio.to_thread(lambda: list(paginator.paginate(**kwargs))):
         yield page
 
-async def list_versions_for_object(qid: str, repo: str) -> List[Dict]:
+async def list_versions_for_object(qid: str, repo: str, limit: int | None = None) -> List[Dict]:
     """Return the commit history for a QID from lakeFS, newest first.
 
     Args:
         qid: Bare QID (e.g. "Q1748526042817"), already normalised to uppercase.
         repo: lakeFS repository name the object lives in.
+        limit: Maximum number of commits to return. None returns all.
 
     Returns:
         List[Dict]: Version dicts with keys commit_id, timestamp, message, committer.
@@ -372,6 +373,9 @@ async def list_versions_for_object(qid: str, repo: str) -> List[Dict]:
 
     def _collect() -> List[Dict]:
         branch = _lakefs_branch(repo=repo)
+        kwargs = {"prefixes": [prefix]}
+        if limit is not None:
+            kwargs["max_amount"] = limit
         return [
             {
                 "commit_id": commit.id,
@@ -379,7 +383,7 @@ async def list_versions_for_object(qid: str, repo: str) -> List[Dict]:
                 "message": commit.message,
                 "committer": commit.committer,
             }
-            for commit in branch.log(prefixes=[prefix])
+            for commit in branch.log(**kwargs)
         ]
 
     try:
