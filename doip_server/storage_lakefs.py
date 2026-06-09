@@ -357,16 +357,38 @@ async def _async_paginate(paginator, **kwargs) -> AsyncGenerator[Dict, None]:
     for page in await asyncio.to_thread(lambda: list(paginator.paginate(**kwargs))):
         yield page
 
-async def list_versions_for_object(qid: str, repo: str, limit: int | None = None) -> List[Dict]:
+async def get_total_size_at_commit(qid: str, repo: str, commit_id: str) -> int:
+    """Return the total size in bytes of all objects under a QID prefix at a specific commit.
+
+    Args:
+        qid: Bare QID, already normalised to uppercase.
+        repo: lakeFS repository name.
+        commit_id: Commit ref to inspect.
+
+    Returns:
+        int: Sum of object sizes in bytes.
+    """
+    prefix = f"{commit_id}/{shard_qid(qid)}/"
+    paginator = _client().get_paginator("list_objects_v2")
+    total = 0
+    async for page in _async_paginate(paginator, Bucket=repo, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            total += obj.get("Size", 0)
+    return total
+
+
+async def list_versions_for_object(qid: str, repo: str, limit: int | None = None, include_sizes: bool = False) -> List[Dict]:
     """Return the commit history for a QID from lakeFS, newest first.
 
     Args:
         qid: Bare QID (e.g. "Q1748526042817"), already normalised to uppercase.
         repo: lakeFS repository name the object lives in.
         limit: Maximum number of commits to return. None returns all.
+        include_sizes: When True, add a size_bytes field to each version entry.
 
     Returns:
-        List[Dict]: Version dicts with keys commit_id, timestamp, message, committer.
+        List[Dict]: Version dicts with keys commit_id, timestamp, message, committer,
+        and optionally size_bytes.
         Empty list when no commits touch the object prefix.
     """
     prefix = shard_qid(qid) + "/"
@@ -387,10 +409,16 @@ async def list_versions_for_object(qid: str, repo: str, limit: int | None = None
         ]
 
     try:
-        return await asyncio.to_thread(_collect)
+        versions = await asyncio.to_thread(_collect)
     except Exception as exc:
         log.warning("list_versions_for_object failed for qid=%s repo=%s: %s", qid, repo, exc)
         raise
+
+    if include_sizes:
+        for version in versions:
+            version["size_bytes"] = await get_total_size_at_commit(qid, repo, version["commit_id"])
+
+    return versions
 
 
 def _extract_qid(object_id: str) -> str:

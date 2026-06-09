@@ -670,7 +670,7 @@ async def test_retrieve_versions_returns_commit_history(monkeypatch):
         {"commit_id": "def456", "timestamp": 1699999000, "message": "upload", "committer": "bob"},
     ]
 
-    async def fake_list_versions(qid, repo, limit=None):
+    async def fake_list_versions(qid, repo, limit=None, include_sizes=False):
         return fake_versions
 
     monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
@@ -701,7 +701,7 @@ async def test_retrieve_versions_returns_commit_history(monkeypatch):
 async def test_retrieve_versions_raises_when_object_not_found(monkeypatch):
     """Versions element propagates KeyError when the object is absent from all repos."""
 
-    async def fake_list_versions(qid, repo, limit=None):
+    async def fake_list_versions(qid, repo, limit=None, include_sizes=False):
         raise AssertionError("list_versions_for_object should not be called for unknown objects")
 
     monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)
@@ -729,7 +729,7 @@ async def test_retrieve_versions_raises_when_object_not_found(monkeypatch):
 async def test_retrieve_versions_returns_empty_list_when_no_commits(monkeypatch):
     """Versions element returns an empty list when no commits touch the object."""
 
-    async def fake_list_versions(qid, repo, limit=None):
+    async def fake_list_versions(qid, repo, limit=None, include_sizes=False):
         return []
 
     monkeypatch.setattr(handlers.storage_lakefs, "list_versions_for_object", fake_list_versions)

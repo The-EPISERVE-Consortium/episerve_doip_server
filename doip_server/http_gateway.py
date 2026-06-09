@@ -185,12 +185,13 @@ async def purge_object(object_id: str):
 
 
 @app.get("/doip/versions/{object_id}")
-async def list_versions(object_id: str, limit: int | None = Query(None)):
+async def list_versions(object_id: str, limit: int | None = Query(None), include_sizes: bool = Query(False)):
     """Return the commit history for an object as a JSON list.
 
     Args:
         object_id: PID/QID of the target object.
         limit: Maximum number of versions to return.
+        include_sizes: When true, include size_bytes (total bytes across all components) per version.
 
     Returns:
         dict: Version list from the DOIP server.
@@ -198,7 +199,7 @@ async def list_versions(object_id: str, limit: int | None = Query(None)):
     log.info("HTTP versions requested", extra={"object_id": object_id})
     client = _client()
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, "versions", limit=limit)
+        response = await asyncio.to_thread(client.retrieve, object_id, "versions", limit=limit, include_sizes=include_sizes)
     except Exception as exc:
         log.exception("DOIP backend error during versions retrieve", extra={"object_id": object_id})
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
