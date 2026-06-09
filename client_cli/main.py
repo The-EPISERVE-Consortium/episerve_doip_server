@@ -24,29 +24,24 @@ logging.basicConfig(
     force=True
 )
 
-def print_mardi_logo():
-    """Print the MaRDI ASCII logo with ANSI coloring.
 
-    Returns:
-        None
-    """
-    # Enable ANSI support on Windows (if needed)
+def _print_banner() -> None:
     if os.name == "nt":
         import ctypes
-        kernel32 = ctypes.windll.kernel32
-        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
-
-    # ANSI colors
-    ORANGE = "\033[38;5;208m"
+        ctypes.windll.kernel32.SetConsoleMode(
+            ctypes.windll.kernel32.GetStdHandle(-11), 7
+        )
+    CYAN = "\033[36m"
     RESET = "\033[0m"
-
-    mardi_nfo = r"""
-██▄  ▄██  ▄▄▄  █████▄  ████▄  ██   ██  ██   ███  ██ ██████ ████▄  ██ 
-██ ▀▀ ██ ██▀██ ██▄▄██▄ ██  ██ ██   ▀█████   ██ ▀▄██ ██▄▄   ██  ██ ██ 
-██    ██ ██▀██ ██   ██ ████▀  ██       ██   ██   ██ ██     ████▀  ██
-"""
-
-    print(ORANGE + mardi_nfo + RESET)
+    banner = (
+        "\n"
+        "██████  ████▄   ██   ████  ██████  ████▄   ██   ██  ██████\n"
+        "██▄▄    ██▄▄█▀  ██  ▄▄▄██  ██▄▄    ██▄▄█▀   ██ ██   ██▄▄  \n"
+        "██████  ██      ██  ████▀  ██████  ██  ▀█    ▀█▀    ██████\n"
+        "\n"
+        "        Epidemiological Surveillance Platform\n"
+    )
+    print(CYAN + banner + RESET, file=sys.stderr)
 
 
 # Combine both formatters to allow newlines and showing default arguments
@@ -84,15 +79,15 @@ def main(argv: list[str] | None = None) -> int:
         int: Process exit code (0 on success, non-zero on error).
     """
     parser = ArgumentParser(
-        description="This is the MaRDI DOIP client.\n\n" +
-                    "This client enables direct interaction with the MaRDI DOIP server for retrieving object " +
+        description="This is the EPISERVE DOIP client.\n\n" +
+                    "This client enables direct interaction with the EPISERVE DOIP server for retrieving object " +
                     "metadata or content, and executing predefined server workflows.\n" +
                     "To see a demo with standard values, execute: python -m client_cli.main --action demo\n" +
-                    "For more information see: https://mardi4nfdi.github.io/mardi_doip_server/",
+                    "For more information see: https://doip.episerve.zib.de",
         formatter_class=RawDescriptionDefaultsHelpFormatter
     )
 
-    parser.add_argument("--host", default="doip.portal.mardi4nfdi.org", help="DOIP Server hostname")
+    parser.add_argument("--host", default="doip.episerve.zib.de", help="DOIP Server hostname")
     parser.add_argument("--port", type=int, default=3567, help="Server port")
     parser.add_argument("--no-tls", action="store_true", help="Disable TLS wrapping")
     parser.add_argument("--secure", action="store_true", help="Enable TLS verification (if you do not use a self-certified cert)")
@@ -254,5 +249,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    print_mardi_logo()
+    _print_banner()
     sys.exit(main())
