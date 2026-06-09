@@ -133,9 +133,9 @@ jobs:
                 --hidden-import=sniffio \
                 --hidden-import=h11 \
                 --clean \
-                --log-level=WARN
+                --log-level=WARN &&
+              sha256sum dist/episerve-doip-cli > dist/checksum.txt
             "
-          sha256sum dist/episerve-doip-cli > dist/checksum.txt
         shell: bash
 
       - name: Build binary (macOS)
