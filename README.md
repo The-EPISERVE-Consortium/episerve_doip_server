@@ -2,6 +2,10 @@
 
 Asyncio-based DOIP 2.0 TCP server that exposes EPISERVE FAIR Digital Objects over the Digital Object Interface Protocol. Streams object components directly from lakeFS (`data-processed` and `model-runs` repositories) and integrates with a MediaWiki/Wikibase backend for derived items.
 
+## Download the CLI binary
+
+Pre-built binaries are published with every [GitHub Release](https://github.com/The-EPISERVE-Consortium/episerve_doip_server/releases).
+
 ## Ports
 
 | Port | Protocol | Description |
