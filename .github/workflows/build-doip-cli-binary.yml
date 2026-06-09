@@ -3,7 +3,11 @@ name: Build DOIP CLI Binaries
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -138,3 +142,31 @@ jobs:
             dist/checksum.txt
           if-no-files-found: error
           overwrite: true
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename binaries for release
+        run: |
+          cp artifacts/mardi-doip-cli-ubuntu-22.04/mardi-doip-cli       episerve-doip-cli-linux
+          cp artifacts/mardi-doip-cli-macos-latest/mardi-doip-cli        episerve-doip-cli-macos
+          cp artifacts/mardi-doip-cli-windows-latest/mardi-doip-cli.exe  episerve-doip-cli-windows.exe
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            episerve-doip-cli-linux \
+            episerve-doip-cli-macos \
+            episerve-doip-cli-windows.exe \
+            --repo ${{ github.repository }} \
+            --generate-notes
