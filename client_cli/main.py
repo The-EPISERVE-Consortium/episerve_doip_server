@@ -79,14 +79,20 @@ def main(argv: list[str] | None = None) -> int:
         int: Process exit code (0 on success, non-zero on error).
     """
     parser = ArgumentParser(
-        description="This is the EPISERVE DOIP client.\n\n" +
-                    "This client enables direct interaction with the EPISERVE DOIP server for retrieving object " +
-                    "metadata or content, and executing predefined server workflows.\n" +
-                    "To see a demo with standard values, execute: python -m client_cli.main --action demo\n" +
-                    "For more information see: https://doip.episerve.zib.de",
-        formatter_class=RawDescriptionDefaultsHelpFormatter
+        prog="episerve-doip-cli",
+        description=(
+            "This is the EPISERVE DOIP client.\n\n"
+            "This client enables direct interaction with the EPISERVE DOIP server for retrieving object "
+            "metadata or content, and executing predefined server workflows.\n"
+            "To see a demo with standard values, execute: python -m client_cli.main --action demo\n"
+            "For more information see: https://doip.episerve.zib.de"
+        ),
+        add_help=False,
+        formatter_class=RawDescriptionDefaultsHelpFormatter,
     )
 
+    parser.add_argument("-h", "--help", action="store_true", default=False,
+                        help="show extended help and exit")
     parser.add_argument("--host", default="doip.episerve.zib.de", help="DOIP Server hostname")
     parser.add_argument("--port", type=int, default=3567, help="Server port")
     parser.add_argument("--no-tls", action="store_true", help="Disable TLS wrapping")
@@ -137,14 +143,30 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    if args.help:
+        _print_banner()
+        parser.print_help()
+        return 0
+
+    if args.action is None:
+        _print_banner()
+
+    logging.getLogger().debug("Handling action: %s", args.action)
+
+    if args.action is None:
+        print(parser.format_usage(), end="")
+        print(parser.description)
+        print()
+        print("options:")
+        print("  -h, --help            show extended help and exit")
+        return 1
+
     client = StrictDOIPClient(
         host=args.host,
         port=args.port,
         use_tls=not args.no_tls,
         verify_tls=args.secure,
     )
-
-    logging.getLogger().debug("Handling action: %s", args.action)
 
     try:
         if args.action == "hello":
@@ -242,10 +264,6 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(meta.metadata_blocks, indent=2))
             return 0
 
-        # No action selected, show help
-        parser.print_help()
-        return 1
-
     except Exception as exc:
         sys.stderr.write(
             f"Error contacting DOIP server {args.host}:{args.port}: {exc}\n"
@@ -254,5 +272,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    _print_banner()
     sys.exit(main())
