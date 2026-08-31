@@ -69,6 +69,100 @@ def _resolve_cli_update_token(explicit_token: str | None) -> str | None:
     return env_token or None
 
 
+def _emit_json(action: str, object_id: str | None, ok: bool,
+               result=None, error: str | None = None) -> None:
+    """Print the single machine-readable result envelope to stdout.
+
+    Args:
+        action: The action that was requested.
+        object_id: Target object identifier, or None for object-less actions.
+        ok: Whether the action succeeded.
+        result: Success payload (omitted when ``ok`` is False).
+        error: Error message (omitted when ``ok`` is True).
+
+    Returns:
+        None
+    """
+    payload: dict = {"action": action, "object_id": object_id, "ok": ok}
+    if ok:
+        payload["result"] = result
+    else:
+        payload["error"] = error
+    print(json.dumps(payload, indent=2))
+
+
+def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object]:
+    """Execute the requested action and return ``(object_id, result_payload)``.
+
+    Raises on any failure so the caller can render a uniform error envelope.
+
+    Args:
+        client: Connected DOIP client.
+        args: Parsed CLI arguments.
+
+    Returns:
+        tuple[str | None, object]: The object id echoed back (None for
+        object-less actions) and the JSON-serialisable result payload.
+    """
+    action = args.action
+    oid = None if action in ("hello", "list_ops") else args.object_id
+
+    if action == "hello":
+        return oid, client.hello()
+    if action == "list_ops":
+        return oid, client.list_ops()
+    if action == "purge":
+        return oid, client.purge(args.object_id)
+    if action == "versions":
+        r = client.retrieve(args.object_id, "versions")
+        versions = r.metadata_blocks[0].get("versions", []) if r.metadata_blocks else []
+        return oid, {"versions": versions}
+    if action == "retrieve":
+        if args.component:
+            if not args.output:
+                raise ValueError(
+                    "--output is required for a component retrieve when "
+                    "--force-json-output is set (binary content cannot share stdout)."
+                )
+            r = client.retrieve(args.object_id, component_id=args.component, version=args.version)
+            if not r.component_blocks:
+                raise ValueError(f"Component {args.component} not found.")
+            block = r.component_blocks[0]
+            with open(args.output, "wb") as fh:
+                fh.write(block.content)
+            return oid, {
+                "saved_to": args.output,
+                "media_type": block.media_type,
+                "bytes": len(block.content),
+            }
+        r = client.retrieve(args.object_id)
+        return oid, {"metadata_blocks": r.metadata_blocks}
+    if action == "invoke":
+        try:
+            params = json.loads(args.params)
+        except Exception:
+            params = {}
+        r = client.invoke(args.object_id, args.workflow, params=params)
+        return oid, {"metadata_blocks": r.metadata_blocks}
+    if action == "update":
+        if not args.component:
+            raise ValueError("--component is required for update.")
+        if not args.input:
+            raise ValueError("--input is required for update.")
+        update_token = _resolve_cli_update_token(args.update_token)
+        if not update_token:
+            raise ValueError("Update authorization requires --update-token or DOIP_UPDATE_TOKEN.")
+        with open(args.input, "rb") as fh:
+            content = fh.read()
+        media_type = args.media_type or "application/octet-stream"
+        r = client.update_component(
+            args.object_id, args.component, content,
+            media_type=media_type, update_token=update_token,
+        )
+        return oid, {"metadata_blocks": r.metadata_blocks}
+    raise ValueError(f"Action {action!r} is not supported with --force-json-output.")
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint for interacting with the strict DOIP client.
 
@@ -96,6 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="doip.episerve.zib.de", help="DOIP Server hostname")
     parser.add_argument("--port", type=int, default=3567, help="Server port")
     parser.add_argument("--no-tls", action="store_true", help="Disable TLS wrapping")
+    parser.add_argument(
+        "--force-json-output",
+        action="store_true",
+        help="Emit a single machine-readable JSON envelope on stdout "
+             "({action, object_id, ok, result|error}); suppress the banner and debug logging.",
+    )
     parser.add_argument("--secure", action="store_true", help="Enable TLS verification (if you do not use a self-certified cert)")
     parser.add_argument("--object-id", default="Q123", help="Object identifier")
     parser.add_argument("--component", default=None, help="Component ID for selective retrieve; if absent, list components")
@@ -143,6 +243,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    if args.force_json_output:
+        logging.disable(logging.INFO)  # keep WARNING+ on stderr, drop the DEBUG/INFO stream
+
     if args.help:
         _print_banner()
         parser.print_help()
@@ -167,6 +270,16 @@ def main(argv: list[str] | None = None) -> int:
         use_tls=not args.no_tls,
         verify_tls=args.secure,
     )
+
+    if args.force_json_output:
+        oid = None if args.action in ("hello", "list_ops") else args.object_id
+        try:
+            oid, result = _run_json_action(client, args)
+            _emit_json(args.action, oid, True, result=result)
+            return 0
+        except Exception as exc:
+            _emit_json(args.action, oid, False, error=str(exc))
+            return 1
 
     try:
         if args.action == "hello":

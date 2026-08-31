@@ -103,6 +103,32 @@ PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action update
 
 Component IDs are exact storage names — no extension is added automatically.
 
+### Machine-readable output
+
+Pass `--force-json-output` to make the CLI print exactly one JSON envelope on
+stdout and nothing else (no banner, no debug logging; warnings and above still
+go to stderr):
+
+```bash
+PYTHONPATH=. python -m client_cli.main --host localhost --no-tls \
+  --force-json-output --action retrieve --object-id Q1748526042817
+```
+
+```json
+{
+  "action": "retrieve",
+  "object_id": "Q1748526042817",
+  "ok": true,
+  "result": { "metadata_blocks": [ ... ] }
+}
+```
+
+On failure the envelope is `{"action": ..., "object_id": ..., "ok": false, "error": "..."}`
+and the exit code is `1`. In this mode a component retrieve (`--component`)
+requires `--output` — binary content cannot share stdout with the envelope.
+Supported actions: `hello`, `list_ops`, `retrieve`, `versions`, `update`,
+`invoke`, `purge` (`demo` is interactive-only).
+
 ## Using the Python client
 
 ```python
