@@ -17,6 +17,7 @@ from argparse import (
 
 
 from doip_client import StrictDOIPClient
+from doip_shared.constants import MSG_TYPE_ERROR
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -52,6 +53,27 @@ class RawDescriptionDefaultsHelpFormatter(
     """Argument formatter combining defaults with raw description rendering."""
 
     pass
+
+
+def _resolve_cli_read_token(explicit_token: str | None) -> str | None:
+    """Resolve the read token for restricted objects from CLI input or the environment.
+
+    Args:
+        explicit_token: Token passed via ``--read-token``.
+
+    Returns:
+        str | None: Resolved read token, or ``None`` when unavailable.
+    """
+    return explicit_token or os.getenv("DOIP_READ_TOKEN") or None
+
+
+def _raise_if_denied(response) -> None:
+    """Raise a clear error when the server refused access to a restricted object."""
+    if response.header.msg_type != MSG_TYPE_ERROR:
+        return
+    block = response.metadata_blocks[0] if response.metadata_blocks else {}
+    if block.get("error") == "AccessDeniedError":
+        raise ValueError("Access denied: this object is restricted. Pass --read-token or set DOIP_READ_TOKEN.")
 
 
 def _resolve_cli_update_token(explicit_token: str | None) -> str | None:
@@ -124,7 +146,9 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
                     "--output is required for a component retrieve when "
                     "--force-json-output is set (binary content cannot share stdout)."
                 )
-            r = client.retrieve(args.object_id, component_id=args.component, version=args.version)
+            r = client.retrieve(args.object_id, component_id=args.component, version=args.version,
+                                token=_resolve_cli_read_token(args.read_token))
+            _raise_if_denied(r)
             if not r.component_blocks:
                 raise ValueError(f"Component {args.component} not found.")
             block = r.component_blocks[0]
@@ -221,6 +245,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Media type for update uploads. If omitted, application/octet-stream is used.",
     )
     parser.add_argument(
+        "--read-token",
+        default=None,
+        help="Read token for restricted objects (component retrieve). Defaults to DOIP_READ_TOKEN when omitted.",
+    )
+    parser.add_argument(
         "--update-token",
         default=None,
         help="Shared secret for update uploads. Defaults to DOIP_UPDATE_TOKEN when omitted.",
@@ -294,7 +323,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.action == "retrieve":
             if args.component:
-                r = client.retrieve(args.object_id, component_id=args.component, version=args.version)
+                r = client.retrieve(args.object_id, component_id=args.component, version=args.version,
+                                    token=_resolve_cli_read_token(args.read_token))
+                _raise_if_denied(r)
                 blocks = r.component_blocks
                 if not blocks:
                     logging.getLogger().error("Component %s not found.", args.component)

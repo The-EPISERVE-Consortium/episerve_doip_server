@@ -45,6 +45,10 @@ def set_config() -> dict:
     if ollama_api_key:
         cfg.setdefault("ollama", {})["api_key"] = ollama_api_key
 
+    read_token = os.getenv("DOIP_READ_TOKEN")
+    if read_token:
+        cfg.setdefault("access", {})["read_token"] = read_token
+
     lakefs_user = os.getenv("LAKEFS_USER")
     if lakefs_user:
         cfg.setdefault("lakefs", {})["user"] = lakefs_user
@@ -369,7 +373,8 @@ async def _process_compat_request(body: dict, registry: object_registry.ObjectRe
             operation=protocol.OP_INVOKE,
             flags=0,
             object_id=target or "",
-            metadata_blocks=[{"workflow": workflow, "params": params}],
+            metadata_blocks=[{"workflow": workflow, "params": params,
+                              **({"token": attributes["token"]} if attributes.get("token") else {})}],
         )
         response = await handlers.handle_invoke(msg, registry)
         return _compat_response_from_doip(response)

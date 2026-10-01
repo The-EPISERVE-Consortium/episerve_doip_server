@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from doip_client import StrictDOIPClient
 from doip_server.logging_config import log
+from doip_shared.constants import MSG_TYPE_ERROR
 
 
 def _parse_host(raw: str | None) -> str:
@@ -145,6 +146,37 @@ def _client(use_tls: bool | None = None) -> StrictDOIPClient:
     )
 
 
+def _bearer_token(request: Request) -> str | None:
+    """Return the token from an ``Authorization: Bearer <token>`` header, if any."""
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    value = value.strip()
+    return value if scheme.lower() == "bearer" and value else None
+
+
+def _raise_if_access_denied(response, token: str | None) -> None:
+    """Map a backend access-denied error to HTTP 401 (no token) or 403 (token rejected).
+
+    Args:
+        response: Parsed DOIP response from the backend.
+        token: Token the caller presented, if any.
+
+    Raises:
+        HTTPException: 401 when no token was presented, 403 when one was rejected.
+    """
+    if response.header.msg_type != MSG_TYPE_ERROR:
+        return
+    block = response.metadata_blocks[0] if response.metadata_blocks else {}
+    if block.get("error") != "AccessDeniedError":
+        return
+    if token:
+        raise HTTPException(status_code=403, detail="Access to this object is restricted")
+    raise HTTPException(
+        status_code=401,
+        detail="This object is restricted; authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 app = FastAPI(title="EPISERVE DOIP HTTP Gateway")
 
 _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
@@ -236,7 +268,7 @@ async def retrieve_metadata(object_id: str):
 
 
 @app.head("/doip/retrieve/{object_id}/{component_id:path}")
-async def head_component(object_id: str, component_id: str, version: str = Query("latest")):
+async def head_component(request: Request, object_id: str, component_id: str, version: str = Query("latest")):
     """Return headers for a component without the body (RFC 7231 HEAD semantics).
 
     Needed because FastAPI does not automatically handle HEAD for routes with
@@ -244,10 +276,12 @@ async def head_component(object_id: str, component_id: str, version: str = Query
     a HEAD check before fetching; without this handler they receive 404.
     """
     client = _client()
+    token = _bearer_token(request)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
+    _raise_if_access_denied(response, token)
     if not response.component_blocks:
         raise HTTPException(status_code=404, detail="Component not found")
     comp = response.component_blocks[0]
@@ -286,13 +320,14 @@ async def download_component(request: Request, object_id: str, component_id: str
     log.info("HTTP download requested", extra={"object_id": object_id, "component_id": component_id, "force_reload": force_reload is not None})
 
     client = _client()
+    token = _bearer_token(request)
     if force_reload is not None:
         try:
             await asyncio.to_thread(client.purge, object_id)
         except Exception as exc:
             log.warning("Purge before reload failed, proceeding anyway", extra={"object_id": object_id}, exc_info=exc)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token)
     except ssl.SSLError as exc:
         log.warning(
             "TLS handshake with DOIP backend failed; retrying without TLS",
@@ -300,7 +335,7 @@ async def download_component(request: Request, object_id: str, component_id: str
             exc_info=exc,
         )
         client = _client(use_tls=False)
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token)
     except ConnectionError as exc:
         log.error(
             "Connection to DOIP backend closed unexpectedly; verify DOIP_BACKEND_HOST/PORT and TLS settings",
@@ -314,6 +349,7 @@ async def download_component(request: Request, object_id: str, component_id: str
         )
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
 
+    _raise_if_access_denied(response, token)
     if not response.component_blocks:
         log.warning(
             "Component not found", extra={"object_id": object_id, "component_id": component_id}

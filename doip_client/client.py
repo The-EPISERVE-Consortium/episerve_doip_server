@@ -87,7 +87,7 @@ class StrictDOIPClient:
         response = self.send_message(request)
         return response.metadata_blocks[0] if response.metadata_blocks else {}
 
-    def retrieve(self, object_id: str, component_id: str = None, version: str | None = None, limit: int | None = None, include_sizes: bool = False) -> DoipResponse:
+    def retrieve(self, object_id: str, component_id: str = None, version: str | None = None, limit: int | None = None, include_sizes: bool = False, token: str | None = None) -> DoipResponse:
         """Retrieve the primary payload for a given object ID.
 
         Args:
@@ -96,6 +96,8 @@ class StrictDOIPClient:
             version: Commit ID to fetch from, or None/"latest" for the current branch.
             limit: Maximum number of versions to return (versions element only).
             include_sizes: When True, include size_bytes in each version entry.
+            token: Read token for restricted objects. Only used when passed explicitly
+                (no environment fallback, so a server-side process never sends its own).
 
         Returns:
             Parsed DOIP response envelope.
@@ -109,6 +111,8 @@ class StrictDOIPClient:
             meta["limit"] = limit
         if include_sizes:
             meta["include_sizes"] = True
+        if token:
+            meta["token"] = token
 
         log.info("retrieve() for object_id=%s and element=%s", object_id, component_id)
 

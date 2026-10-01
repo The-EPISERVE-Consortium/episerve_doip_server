@@ -34,6 +34,7 @@ pip install -r requirements.txt
 | `LAKEFS_PASSWORD` | lakeFS password |
 | `LAKEFS_URL` | lakeFS endpoint, e.g. `https://lake-episerve.zib.de` |
 | `LAKEFS_REPOS` | Comma-separated list of lakeFS repos to serve, e.g. `data-processed,model-runs` |
+| `DOIP_READ_TOKEN` | Shared secret that grants access to *restricted* objects (FDO `profile.accessRights == "restricted"`). If unset, restricted objects are refused for everyone. |
 | `OLLAMA_API_KEY` | Ollama API key (optional, for invoke workflows) |
 
 **Run the server:**

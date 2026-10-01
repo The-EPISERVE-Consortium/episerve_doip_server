@@ -31,6 +31,14 @@ class ProtocolError(Exception):
     """Raised when a DOIP envelope is malformed."""
 
 
+class AccessDeniedError(ProtocolError):
+    """Raised when a request lacks the credential required by a restricted object.
+
+    The error envelope carries the class name, which lets the HTTP gateway map
+    it to 401/403 instead of a generic failure.
+    """
+
+
 @dataclass
 class ComponentBlock:
     """Binary component block inside a DOIP payload."""

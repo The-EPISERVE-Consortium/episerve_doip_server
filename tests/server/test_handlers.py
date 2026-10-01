@@ -258,6 +258,125 @@ async def test_retrieve_component_defaults_when_manifest_missing(monkeypatch):
     assert comp.content == b"content"
 
 
+# ── Restricted objects (profile.accessRights == "restricted") ───────────────────
+
+_COMPONENT = {"@id": "components/data.parquet", "componentId": "data.parquet", "mediaType": "application/vnd.apache.parquet"}
+
+
+def _access_registry(monkeypatch, access_rights, read_token="s3cret"):
+    """Registry whose manifest carries ``accessRights``; storage returns fixed bytes."""
+
+    async def fake_ensure():
+        return True
+
+    async def fake_get_bytes(qid, comp, repo, version=None):
+        return b"secret-bytes"
+
+    monkeypatch.setattr(handlers.storage_lakefs, "ensure_lakefs_available", fake_ensure)
+    monkeypatch.setattr(handlers.storage_lakefs, "get_component_bytes", fake_get_bytes)
+    monkeypatch.setattr(handlers.storage_lakefs, "get_read_token", lambda: read_token)
+
+    async def fake_fetch_fdo(pid):
+        profile = {"accessRights": access_rights} if access_rights else {}
+        return {"kernel": {"fdo:hasComponent": [_COMPONENT]}, "profile": profile}
+
+    registry = StubRegistry([])
+    registry.fetch_fdo_object = fake_fetch_fdo
+    return registry
+
+
+def _retrieve_request(metadata, op=protocol.OP_RETRIEVE):
+    return protocol.DOIPMessage(
+        version=protocol.DOIP_VERSION,
+        msg_type=protocol.MSG_TYPE_REQUEST,
+        operation=op,
+        flags=0,
+        object_id="Q123",
+        metadata_blocks=[metadata],
+    )
+
+
+@pytest.mark.asyncio
+async def test_restricted_component_denied_without_token(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_retrieve_request({"element": "data.parquet"}), registry)
+
+
+@pytest.mark.asyncio
+async def test_restricted_component_denied_with_wrong_token(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_retrieve_request({"element": "data.parquet", "token": "nope"}), registry)
+
+
+@pytest.mark.asyncio
+async def test_restricted_component_served_with_valid_token(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    response = await handlers.handle_retrieve(
+        _retrieve_request({"element": "data.parquet", "token": "s3cret"}), registry
+    )
+    assert response.component_blocks[0].content == b"secret-bytes"
+
+
+@pytest.mark.asyncio
+async def test_restricted_old_version_is_also_protected(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(
+            _retrieve_request({"element": "data.parquet", "version": "abc123"}), registry
+        )
+
+
+@pytest.mark.asyncio
+async def test_restricted_rocrate_denied_without_token(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_retrieve_request({"element": "rocrate"}), registry)
+
+
+@pytest.mark.asyncio
+async def test_restricted_is_refused_for_everyone_when_server_token_unset(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted", read_token=None)
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_retrieve_request({"element": "data.parquet", "token": "anything"}), registry)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("access_rights", [None, "public", ""])
+async def test_unrestricted_component_needs_no_token(monkeypatch, access_rights):
+    registry = _access_registry(monkeypatch, access_rights)
+    response = await handlers.handle_retrieve(_retrieve_request({"element": "data.parquet"}), registry)
+    assert response.component_blocks[0].content == b"secret-bytes"
+
+
+@pytest.mark.asyncio
+async def test_restricted_metadata_stays_readable_without_token(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    response = await handlers.handle_retrieve(_retrieve_request({}), registry)
+    assert response.metadata_blocks[0]["profile"]["accessRights"] == "restricted"
+
+
+@pytest.mark.asyncio
+async def test_restricted_check_fails_closed_when_manifest_unreadable(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+
+    async def broken_fetch(pid):
+        raise RuntimeError("lakeFS down")
+
+    registry.fetch_fdo_object = broken_fetch
+    with pytest.raises(KeyError, match="Object not found"):
+        await handlers.handle_retrieve(_retrieve_request({"element": "data.parquet", "token": "s3cret"}), registry)
+
+
+@pytest.mark.asyncio
+async def test_restricted_invoke_denied_without_token(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    request = _retrieve_request({"workflow": "equation_extraction", "params": {}}, op=protocol.OP_INVOKE)
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_invoke(request, registry)
+
+
 @pytest.mark.asyncio
 async def test_handle_update_stores_component_and_commits(monkeypatch):
     """Ensure authenticated updates write one component and commit it.

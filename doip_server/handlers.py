@@ -101,6 +101,7 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
     log.info("handle_retrieve() for object_id=%s", pid)
 
     if element == "rocrate":
+        await _require_read_access(pid, msg, registry)
         try:
             crate, _ = await registry.get_component(pid, "rocrate")
         except KeyError:
@@ -146,6 +147,7 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
         )
 
     if element:
+        await _require_read_access(pid, msg, registry)
         try:
             content, media_type = await registry.get_component(pid, element, version=version)
             size = len(content)
@@ -262,6 +264,54 @@ async def handle_update(msg: DOIPMessage, registry: object_registry.ObjectRegist
     )
 
 
+def _is_restricted(manifest: dict) -> bool:
+    """Return True if the FDO profile marks the object as restricted."""
+    profile = manifest.get("profile") if isinstance(manifest, dict) else None
+    return isinstance(profile, dict) and profile.get("accessRights") == "restricted"
+
+
+def _token_from_message(msg: DOIPMessage) -> str | None:
+    """Return the first ``token`` found in the request's metadata blocks."""
+    for block in msg.metadata_blocks:
+        token = block.get("token") if isinstance(block, dict) else None
+        if isinstance(token, str) and token:
+            return token
+    return None
+
+
+async def _require_read_access(pid: str, msg: DOIPMessage, registry: object_registry.ObjectRegistry) -> None:
+    """Refuse file access to a restricted object unless the request carries the read token.
+
+    Objects are restricted when their FDO has ``profile.accessRights == "restricted"``.
+    The check uses the current manifest, so it also applies to older versions of a
+    component. It fails closed: if the manifest cannot be read, access is refused,
+    and when no read token is configured on the server restricted objects are
+    refused for everyone. Unrestricted objects are unaffected.
+
+    Args:
+        pid: Object identifier (QID).
+        msg: Incoming request; the credential is its ``token`` metadata field.
+        registry: Object registry used to read the manifest.
+
+    Raises:
+        KeyError: If the manifest cannot be read.
+        protocol.AccessDeniedError: If the object is restricted and the token is
+            missing, invalid, or not configured on the server.
+    """
+    try:
+        manifest = await registry.fetch_fdo_object(pid)
+    except Exception as exc:  # noqa: BLE001
+        raise KeyError(f"Object not found: {pid}") from exc
+    if not _is_restricted(manifest):
+        return
+
+    expected = storage_lakefs.get_read_token()
+    provided = _token_from_message(msg)
+    if not expected or not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
+        log.warning("Rejected access to restricted object %s", pid)
+        raise protocol.AccessDeniedError("access to this object is restricted")
+
+
 def _validate_update_token(object_id: str, metadata: dict) -> None:
     """Validate the shared secret attached to an update request.
 
@@ -303,6 +353,7 @@ async def handle_invoke(msg: DOIPMessage, registry: object_registry.ObjectRegist
     """
     qid = msg.object_id
     log.info("Handling invoke request for object_id=%s", qid)
+    await _require_read_access(qid.upper(), msg, registry)
     workflow_name, params = _requested_workflow(msg)
     if workflow_name == "equation_extraction":
         result = await workflows.run_equation_extraction_workflow(qid, params)

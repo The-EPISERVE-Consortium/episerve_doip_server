@@ -70,6 +70,22 @@ def get_update_token() -> str | None:
     return token if isinstance(token, str) and token else None
 
 
+def get_read_token() -> str | None:
+    """Return the shared secret that grants access to restricted objects.
+
+    Set via the ``DOIP_READ_TOKEN`` environment variable (or ``access.read_token``
+    in ``config.yaml``). Objects whose FDO has ``profile.accessRights ==
+    "restricted"`` are served only to requests presenting this token.
+
+    Returns:
+        str | None: Configured secret, or ``None`` when unset (restricted objects
+        are then refused for everyone).
+    """
+    access_cfg = _CFG.get("access", {}) if isinstance(_CFG, dict) else {}
+    token = access_cfg.get("read_token") if isinstance(access_cfg, dict) else None
+    return token if isinstance(token, str) and token else None
+
+
 def _endpoint_url() -> str | None:
     """Resolve the lakeFS/S3-compatible endpoint URL.
 
