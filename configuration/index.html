@@ -718,11 +718,11 @@
 </code></pre></div>
 Keep secrets in env vars rather than committing them to the template.</p>
 <h2 id="restricted-objects">Restricted objects<a class="headerlink" href="#restricted-objects" title="Permanent link">&para;</a></h2>
-<p>An object whose FDO has <code>profile.accessRights: restricted</code> is served only to requests that present the read token configured in <code>DOIP_READ_TOKEN</code> (or <code>access.read_token</code> in <code>config.yaml</code>). The check covers component retrieves (including older <code>version</code>s), the <code>rocrate</code> element and <code>invoke</code>; FDO metadata and the version list stay readable. If no token is configured, restricted objects are refused for everyone.</p>
+<p>An object whose FDO has <code>profile.accessRights: restricted</code> is served only to requests that present the read token: <code>DOIP_READ_TOKEN</code> (or <code>access.read_token</code> in <code>config.yaml</code>) when set, otherwise the update token, which is the lakeFS password. Anyone holding that token can also run <code>update</code>, so set a separate <code>DOIP_READ_TOKEN</code> to hand out read-only access. The check covers component retrieves (including older <code>version</code>s), the <code>rocrate</code> element and <code>invoke</code>; FDO metadata and the version list stay readable. If neither is available, restricted objects are refused for everyone.</p>
 <ul>
 <li>HTTP gateway: send <code>Authorization: Bearer &lt;token&gt;</code>. A missing token returns <code>401</code>, a wrong one <code>403</code>.</li>
 <li>Native protocol: put <code>"token"</code> in the request's metadata block (<code>StrictDOIPClient.retrieve(..., token=...)</code>).</li>
-<li>CLI: <code>--read-token</code> or the <code>DOIP_READ_TOKEN</code> environment variable.</li>
+<li>CLI: <code>--read-token</code>, else <code>DOIP_READ_TOKEN</code>, else <code>DOIP_UPDATE_TOKEN</code>.</li>
 </ul>
 <p>The client library never reads <code>DOIP_READ_TOKEN</code> itself: the gateway runs next to the server, so a fallback would authorize every request.</p>
 <h2 id="cli-flags">CLI flags<a class="headerlink" href="#cli-flags" title="Permanent link">&para;</a></h2>
