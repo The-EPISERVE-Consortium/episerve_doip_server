@@ -36,6 +36,7 @@ pip install -r requirements.txt
 | `LAKEFS_REPOS` | Comma-separated list of lakeFS repos to serve, e.g. `data-processed,model-runs` |
 | `DOIP_READ_TOKEN` | Optional. Secret that grants access to *restricted* objects (FDO `profile.accessRights == "restricted"`). If unset, the update token (the lakeFS password) is used. |
 | `DOIP_LINK_SECRET` | Optional. Secret for verifying expiring signed links (`?exp=…&sig=…`) to restricted components, shared with whoever creates the links (the CKAN theme). Unset = signed links are refused. |
+| `DOIP_MANIFEST_CACHE_TTL` | Seconds an object's FDO stays cached (default `300`; `0` = never expire). A change to the FDO, e.g. `accessRights`, takes effect after at most this long. |
 | `OLLAMA_API_KEY` | Ollama API key (optional, for invoke workflows) |
 
 **Run the server:**

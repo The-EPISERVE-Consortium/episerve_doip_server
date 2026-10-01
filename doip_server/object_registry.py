@@ -1,18 +1,50 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, List
+import os
+import time
+from typing import Callable, Dict, List
 
 from . import storage_lakefs
 from .logging_config import log
 
+DEFAULT_MANIFEST_CACHE_TTL = 300.0
+
+
+def _manifest_ttl_from_env() -> float:
+    """Return the manifest cache lifetime in seconds from ``DOIP_MANIFEST_CACHE_TTL``.
+
+    Defaults to 300. ``0`` disables expiry (entries live until purged or restart).
+    Invalid values fall back to the default; negative values count as 0.
+    """
+    raw = os.getenv("DOIP_MANIFEST_CACHE_TTL")
+    if raw is None or not raw.strip():
+        return DEFAULT_MANIFEST_CACHE_TTL
+    try:
+        return max(float(raw), 0.0)
+    except ValueError:
+        log.warning("Invalid DOIP_MANIFEST_CACHE_TTL %r; using %s", raw, DEFAULT_MANIFEST_CACHE_TTL)
+        return DEFAULT_MANIFEST_CACHE_TTL
+
 
 class ObjectRegistry:
-    """Caches manifests and component metadata for DOIP objects."""
+    """Caches manifests and component metadata for DOIP objects.
 
-    def __init__(self):
-        """Initialize registry caches and shared state."""
-        self._manifest_cache: Dict[str, tuple[Dict, str]] = {}  # pid -> (manifest, repo)
+    Manifests expire after ``ttl`` seconds so that changes to an object's FDO, in
+    particular ``profile.accessRights``, take effect without a restart.
+    """
+
+    def __init__(self, ttl: float | None = None, clock: Callable[[], float] = time.monotonic):
+        """Initialize registry caches and shared state.
+
+        Args:
+            ttl: Manifest lifetime in seconds; ``0`` disables expiry. ``None`` reads
+                ``DOIP_MANIFEST_CACHE_TTL`` (default 300).
+            clock: Monotonic clock, injectable for tests.
+        """
+        self._ttl = _manifest_ttl_from_env() if ttl is None else max(ttl, 0.0)
+        self._clock = clock
+        self._manifest_cache: Dict[str, tuple[Dict, str, float]] = {}  # pid -> (manifest, repo, fetched_at)
         self._lock = asyncio.Lock()
 
     async def fetch_fdo_object(self, pid: str) -> Dict:
@@ -101,15 +133,20 @@ class ObjectRegistry:
         """Return (manifest, repo) for a PID, using the cache when available."""
         pid = pid.upper()
         async with self._lock:
-            if pid in self._manifest_cache:
-                log.info(f"Cache hit for {pid}.")
-                return self._manifest_cache[pid]
+            entry = self._manifest_cache.get(pid)
+            if entry is not None:
+                manifest, repo, fetched_at = entry
+                if self._ttl <= 0 or self._clock() - fetched_at < self._ttl:
+                    log.info(f"Cache hit for {pid}.")
+                    return manifest, repo
+                del self._manifest_cache[pid]
+                log.info(f"Cache entry for {pid} expired.")
 
         log.info("(registry._resolve) Fetching FDO metadata for %s", pid)
         manifest, repo = await storage_lakefs.get_fdo_metadata(pid)
 
         async with self._lock:
-            self._manifest_cache[pid] = (manifest, repo)
+            self._manifest_cache[pid] = (manifest, repo, self._clock())
 
         return manifest, repo
 

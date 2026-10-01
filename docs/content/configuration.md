@@ -49,6 +49,8 @@ An object whose FDO has `profile.accessRights: restricted` is served only to req
 
 The client library never reads `DOIP_READ_TOKEN` itself: the gateway runs next to the server, so a fallback would authorize every request.
 
+**Cache.** The server caches each object's FDO for `DOIP_MANIFEST_CACHE_TTL` seconds (default 300; `0` = until purge or restart). The restricted-object check reads that copy, so a change to `accessRights` takes effect after at most this long; `?force_reload` or a purge applies it immediately.
+
 ## CLI flags
 - `--port`: TCP port for the binary listener (compatibility listener uses `port+1`).
 - `--fdo-api`: Overrides the FDO façade URL for a single run.
