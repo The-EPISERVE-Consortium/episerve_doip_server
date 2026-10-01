@@ -717,6 +717,14 @@
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="nt">password</span><span class="p">:</span><span class="w"> </span><span class="s">"${LAKEFS_PASSWORD:-}"</span>
 </code></pre></div>
 Keep secrets in env vars rather than committing them to the template.</p>
+<h2 id="restricted-objects">Restricted objects<a class="headerlink" href="#restricted-objects" title="Permanent link">&para;</a></h2>
+<p>An object whose FDO has <code>profile.accessRights: restricted</code> is served only to requests that present the read token configured in <code>DOIP_READ_TOKEN</code> (or <code>access.read_token</code> in <code>config.yaml</code>). The check covers component retrieves (including older <code>version</code>s), the <code>rocrate</code> element and <code>invoke</code>; FDO metadata and the version list stay readable. If no token is configured, restricted objects are refused for everyone.</p>
+<ul>
+<li>HTTP gateway: send <code>Authorization: Bearer &lt;token&gt;</code>. A missing token returns <code>401</code>, a wrong one <code>403</code>.</li>
+<li>Native protocol: put <code>"token"</code> in the request's metadata block (<code>StrictDOIPClient.retrieve(..., token=...)</code>).</li>
+<li>CLI: <code>--read-token</code> or the <code>DOIP_READ_TOKEN</code> environment variable.</li>
+</ul>
+<p>The client library never reads <code>DOIP_READ_TOKEN</code> itself: the gateway runs next to the server, so a fallback would authorize every request.</p>
 <h2 id="cli-flags">CLI flags<a class="headerlink" href="#cli-flags" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>--port</code>: TCP port for the binary listener (compatibility listener uses <code>port+1</code>).</li>
@@ -931,6 +939,14 @@ Keep secrets in env vars rather than committing them to the template.</p>
             class="text-muted-foreground hover:text-foreground data-[active=true]:text-foreground text-[0.8rem] no-underline transition-colors data-[depth=3]:pl-4 data-[depth=4]:pl-6"
             data-active="false" data-depth="2" onClick="deferSetActiveTocLink('#configyaml-layout-example');">
             config.yaml layout (example)
+        </a>
+        
+
+        
+        <a href="#restricted-objects"
+            class="text-muted-foreground hover:text-foreground data-[active=true]:text-foreground text-[0.8rem] no-underline transition-colors data-[depth=3]:pl-4 data-[depth=4]:pl-6"
+            data-active="false" data-depth="2" onClick="deferSetActiveTocLink('#restricted-objects');">
+            Restricted objects
         </a>
         
 
