@@ -73,17 +73,21 @@ def get_update_token() -> str | None:
 def get_read_token() -> str | None:
     """Return the shared secret that grants access to restricted objects.
 
-    Set via the ``DOIP_READ_TOKEN`` environment variable (or ``access.read_token``
-    in ``config.yaml``). Objects whose FDO has ``profile.accessRights ==
-    "restricted"`` are served only to requests presenting this token.
+    Objects whose FDO has ``profile.accessRights == "restricted"`` are served only
+    to requests presenting this token. It is the ``DOIP_READ_TOKEN`` environment
+    variable (or ``access.read_token`` in ``config.yaml``) when set, otherwise the
+    update token, so by default one DOIP token covers both reads of restricted
+    objects and updates.
 
     Returns:
-        str | None: Configured secret, or ``None`` when unset (restricted objects
-        are then refused for everyone).
+        str | None: Configured secret, or ``None`` when neither is available
+        (restricted objects are then refused for everyone).
     """
     access_cfg = _CFG.get("access", {}) if isinstance(_CFG, dict) else {}
     token = access_cfg.get("read_token") if isinstance(access_cfg, dict) else None
-    return token if isinstance(token, str) and token else None
+    if isinstance(token, str) and token:
+        return token
+    return get_update_token()
 
 
 def _endpoint_url() -> str | None:

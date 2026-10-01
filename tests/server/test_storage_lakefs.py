@@ -164,3 +164,19 @@ async def test_storage_lakefs_can_put_object_to_sandbox():
     print(f"Committed sandbox write with commit_id={commit['commit_id']}")
 
     assert response.size_bytes == len(payload)
+
+
+def test_read_token_falls_back_to_update_token(monkeypatch):
+    monkeypatch.setattr(storage_lakefs, "_CFG", {"lakefs": {"password": "lakefs-secret"}})
+    assert storage_lakefs.get_read_token() == "lakefs-secret"
+
+
+def test_read_token_override_takes_precedence(monkeypatch):
+    monkeypatch.setattr(storage_lakefs, "_CFG", {"lakefs": {"password": "lakefs-secret"}, "access": {"read_token": "reader"}})
+    assert storage_lakefs.get_read_token() == "reader"
+    assert storage_lakefs.get_update_token() == "lakefs-secret"
+
+
+def test_read_token_none_when_nothing_configured(monkeypatch):
+    monkeypatch.setattr(storage_lakefs, "_CFG", {})
+    assert storage_lakefs.get_read_token() is None

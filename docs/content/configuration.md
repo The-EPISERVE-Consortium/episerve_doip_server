@@ -39,11 +39,11 @@ lakefs:
 Keep secrets in env vars rather than committing them to the template.
 
 ## Restricted objects
-An object whose FDO has `profile.accessRights: restricted` is served only to requests that present the read token configured in `DOIP_READ_TOKEN` (or `access.read_token` in `config.yaml`). The check covers component retrieves (including older `version`s), the `rocrate` element and `invoke`; FDO metadata and the version list stay readable. If no token is configured, restricted objects are refused for everyone.
+An object whose FDO has `profile.accessRights: restricted` is served only to requests that present the read token: `DOIP_READ_TOKEN` (or `access.read_token` in `config.yaml`) when set, otherwise the update token, which is the lakeFS password. Anyone holding that token can also run `update`, so set a separate `DOIP_READ_TOKEN` to hand out read-only access. The check covers component retrieves (including older `version`s), the `rocrate` element and `invoke`; FDO metadata and the version list stay readable. If neither is available, restricted objects are refused for everyone.
 
 - HTTP gateway: send `Authorization: Bearer <token>`. A missing token returns `401`, a wrong one `403`.
 - Native protocol: put `"token"` in the request's metadata block (`StrictDOIPClient.retrieve(..., token=...)`).
-- CLI: `--read-token` or the `DOIP_READ_TOKEN` environment variable.
+- CLI: `--read-token`, else `DOIP_READ_TOKEN`, else `DOIP_UPDATE_TOKEN`.
 
 The client library never reads `DOIP_READ_TOKEN` itself: the gateway runs next to the server, so a fallback would authorize every request.
 

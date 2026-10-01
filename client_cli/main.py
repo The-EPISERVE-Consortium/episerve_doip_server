@@ -62,9 +62,11 @@ def _resolve_cli_read_token(explicit_token: str | None) -> str | None:
         explicit_token: Token passed via ``--read-token``.
 
     Returns:
-        str | None: Resolved read token, or ``None`` when unavailable.
+        str | None: ``--read-token``, else ``DOIP_READ_TOKEN``, else the update token
+        ``DOIP_UPDATE_TOKEN`` (the server accepts it for restricted objects by default),
+        or ``None`` when unavailable.
     """
-    return explicit_token or os.getenv("DOIP_READ_TOKEN") or None
+    return explicit_token or os.getenv("DOIP_READ_TOKEN") or os.getenv("DOIP_UPDATE_TOKEN") or None
 
 
 def _raise_if_denied(response) -> None:
@@ -247,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--read-token",
         default=None,
-        help="Read token for restricted objects (component retrieve). Defaults to DOIP_READ_TOKEN when omitted.",
+        help="Token for restricted objects (component retrieve). Defaults to DOIP_READ_TOKEN, then DOIP_UPDATE_TOKEN, when omitted.",
     )
     parser.add_argument(
         "--update-token",
