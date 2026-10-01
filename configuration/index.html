@@ -724,6 +724,7 @@ Keep secrets in env vars rather than committing them to the template.</p>
 <li>Native protocol: put <code>"token"</code> in the request's metadata block (<code>StrictDOIPClient.retrieve(..., token=...)</code>).</li>
 <li>CLI: <code>--read-token</code>, else <code>DOIP_READ_TOKEN</code>, else <code>DOIP_UPDATE_TOKEN</code>.</li>
 </ul>
+<p><strong>Signed links.</strong> Browsers cannot send a token (e.g. the CKAN parquet preview), so a component of a restricted object can also be requested with <code>?exp=&lt;unix seconds&gt;&amp;sig=&lt;signature&gt;</code>. The signature is <code>HMAC-SHA256(DOIP_LINK_SECRET, "&lt;QID&gt;\n&lt;component&gt;\n&lt;exp&gt;")</code> in hex (see <code>doip_shared/signing.py</code>) and is valid for that object and component only, until <code>exp</code>. It works for component retrieves (GET and HEAD), not for <code>rocrate</code> or <code>invoke</code>. <code>DOIP_LINK_SECRET</code> is separate from the update token: it can only create read links. A missing or wrong signature gives <code>403</code>; unset secret means signed links are refused.</p>
 <p>The client library never reads <code>DOIP_READ_TOKEN</code> itself: the gateway runs next to the server, so a fallback would authorize every request.</p>
 <h2 id="cli-flags">CLI flags<a class="headerlink" href="#cli-flags" title="Permanent link">&para;</a></h2>
 <ul>
