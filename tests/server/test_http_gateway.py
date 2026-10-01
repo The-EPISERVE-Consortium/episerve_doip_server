@@ -23,10 +23,12 @@ class FakeClient:
 
     def __init__(self):
         self.tokens = []
+        self.signed = []
 
-    def retrieve(self, object_id, component_id=None, version=None, limit=None, include_sizes=False, token=None):
+    def retrieve(self, object_id, component_id=None, version=None, limit=None, include_sizes=False, token=None, exp=None, sig=None):
         self.tokens.append(token)
-        if token != "good":
+        self.signed.append((exp, sig))
+        if token != "good" and sig != "validsig":
             return _response(MSG_TYPE_ERROR, [{"error": "AccessDeniedError", "message": "access to this object is restricted"}])
         return _response(MSG_TYPE_RESPONSE, components=[ComponentBlock(component_id="data.parquet", content=b"abc", media_type="application/octet-stream")])
 
@@ -71,3 +73,22 @@ def test_non_bearer_authorization_is_ignored(gateway):
     client, fake = gateway
     assert client.get(URL, headers={"Authorization": "Basic Zm9vOmJhcg=="}).status_code == 401
     assert fake.tokens == [None]
+
+
+def test_signed_link_query_params_are_passed_through(gateway):
+    client, fake = gateway
+    r = client.get(URL + "?exp=4102444800&sig=validsig")
+    assert r.status_code == 200 and r.content == b"abc"
+    assert fake.signed == [("4102444800", "validsig")]
+    assert fake.tokens == [None]
+
+
+def test_invalid_signature_gives_403_not_401(gateway):
+    client, _ = gateway
+    assert client.get(URL + "?exp=4102444800&sig=forged").status_code == 403
+    assert client.head(URL + "?exp=4102444800&sig=forged").status_code == 403
+
+
+def test_head_with_signed_link_is_served(gateway):
+    client, _ = gateway
+    assert client.head(URL + "?exp=4102444800&sig=validsig").status_code == 200

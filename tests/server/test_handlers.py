@@ -369,6 +369,69 @@ async def test_restricted_check_fails_closed_when_manifest_unreadable(monkeypatc
         await handlers.handle_retrieve(_retrieve_request({"element": "data.parquet", "token": "s3cret"}), registry)
 
 
+def _signed_request(component, secret="link", exp=None, qid="Q123", sign_component=None, **extra):
+    import time
+    from doip_shared import signing
+    exp = exp if exp is not None else int(time.time()) + 600
+    sig = signing.sign(secret, qid, sign_component or component, exp)
+    return _retrieve_request({"element": component, "exp": str(exp), "sig": sig, **extra})
+
+
+@pytest.mark.asyncio
+async def test_restricted_component_served_with_valid_signed_link(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    monkeypatch.setattr(handlers.storage_lakefs, "get_link_secret", lambda: "link")
+    response = await handlers.handle_retrieve(_signed_request("data.parquet"), registry)
+    assert response.component_blocks[0].content == b"secret-bytes"
+
+
+@pytest.mark.asyncio
+async def test_signed_link_for_another_component_is_denied(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    monkeypatch.setattr(handlers.storage_lakefs, "get_link_secret", lambda: "link")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_signed_request("data.parquet", sign_component="other.parquet"), registry)
+
+
+@pytest.mark.asyncio
+async def test_expired_signed_link_is_denied(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    monkeypatch.setattr(handlers.storage_lakefs, "get_link_secret", lambda: "link")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_signed_request("data.parquet", exp=1), registry)
+
+
+@pytest.mark.asyncio
+async def test_signed_link_is_denied_when_no_link_secret_is_configured(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    monkeypatch.setattr(handlers.storage_lakefs, "get_link_secret", lambda: None)
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_signed_request("data.parquet"), registry)
+
+
+@pytest.mark.asyncio
+async def test_signed_link_does_not_unlock_rocrate(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    monkeypatch.setattr(handlers.storage_lakefs, "get_link_secret", lambda: "link")
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_retrieve(_signed_request("rocrate"), registry)
+
+
+@pytest.mark.asyncio
+async def test_signed_link_does_not_unlock_invoke(monkeypatch):
+    registry = _access_registry(monkeypatch, "restricted")
+    monkeypatch.setattr(handlers.storage_lakefs, "get_link_secret", lambda: "link")
+    import time
+    from doip_shared import signing
+    exp = int(time.time()) + 600
+    request = _retrieve_request(
+        {"workflow": "equation_extraction", "params": {}, "exp": str(exp), "sig": signing.sign("link", "Q123", "equation_extraction", exp)},
+        op=protocol.OP_INVOKE,
+    )
+    with pytest.raises(protocol.AccessDeniedError):
+        await handlers.handle_invoke(request, registry)
+
+
 @pytest.mark.asyncio
 async def test_restricted_invoke_denied_without_token(monkeypatch):
     registry = _access_registry(monkeypatch, "restricted")

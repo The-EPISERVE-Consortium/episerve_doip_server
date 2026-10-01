@@ -45,6 +45,8 @@ An object whose FDO has `profile.accessRights: restricted` is served only to req
 - Native protocol: put `"token"` in the request's metadata block (`StrictDOIPClient.retrieve(..., token=...)`).
 - CLI: `--read-token`, else `DOIP_READ_TOKEN`, else `DOIP_UPDATE_TOKEN`.
 
+**Signed links.** Browsers cannot send a token (e.g. the CKAN parquet preview), so a component of a restricted object can also be requested with `?exp=<unix seconds>&sig=<signature>`. The signature is `HMAC-SHA256(DOIP_LINK_SECRET, "<QID>\n<component>\n<exp>")` in hex (see `doip_shared/signing.py`) and is valid for that object and component only, until `exp`. It works for component retrieves (GET and HEAD), not for `rocrate` or `invoke`. `DOIP_LINK_SECRET` is separate from the update token: it can only create read links. A missing or wrong signature gives `403`; unset secret means signed links are refused.
+
 The client library never reads `DOIP_READ_TOKEN` itself: the gateway runs next to the server, so a fallback would authorize every request.
 
 ## CLI flags

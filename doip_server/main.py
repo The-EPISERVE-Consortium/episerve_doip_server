@@ -49,6 +49,10 @@ def set_config() -> dict:
     if read_token:
         cfg.setdefault("access", {})["read_token"] = read_token
 
+    link_secret = os.getenv("DOIP_LINK_SECRET")
+    if link_secret:
+        cfg.setdefault("access", {})["link_secret"] = link_secret
+
     lakefs_user = os.getenv("LAKEFS_USER")
     if lakefs_user:
         cfg.setdefault("lakefs", {})["user"] = lakefs_user

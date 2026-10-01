@@ -87,7 +87,7 @@ class StrictDOIPClient:
         response = self.send_message(request)
         return response.metadata_blocks[0] if response.metadata_blocks else {}
 
-    def retrieve(self, object_id: str, component_id: str = None, version: str | None = None, limit: int | None = None, include_sizes: bool = False, token: str | None = None) -> DoipResponse:
+    def retrieve(self, object_id: str, component_id: str = None, version: str | None = None, limit: int | None = None, include_sizes: bool = False, token: str | None = None, exp: int | str | None = None, sig: str | None = None) -> DoipResponse:
         """Retrieve the primary payload for a given object ID.
 
         Args:
@@ -98,6 +98,8 @@ class StrictDOIPClient:
             include_sizes: When True, include size_bytes in each version entry.
             token: Read token for restricted objects. Only used when passed explicitly
                 (no environment fallback, so a server-side process never sends its own).
+            exp: Expiry (unix seconds) of a signed link; sent together with ``sig``.
+            sig: Signature of a signed link for this component (see ``doip_shared.signing``).
 
         Returns:
             Parsed DOIP response envelope.
@@ -113,6 +115,9 @@ class StrictDOIPClient:
             meta["include_sizes"] = True
         if token:
             meta["token"] = token
+        if sig:
+            meta["sig"] = sig
+            meta["exp"] = exp
 
         log.info("retrieve() for object_id=%s and element=%s", object_id, component_id)
 

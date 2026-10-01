@@ -268,7 +268,7 @@ async def retrieve_metadata(object_id: str):
 
 
 @app.head("/doip/retrieve/{object_id}/{component_id:path}")
-async def head_component(request: Request, object_id: str, component_id: str, version: str = Query("latest")):
+async def head_component(request: Request, object_id: str, component_id: str, version: str = Query("latest"), exp: str | None = Query(None), sig: str | None = Query(None)):
     """Return headers for a component without the body (RFC 7231 HEAD semantics).
 
     Needed because FastAPI does not automatically handle HEAD for routes with
@@ -278,10 +278,10 @@ async def head_component(request: Request, object_id: str, component_id: str, ve
     client = _client()
     token = _bearer_token(request)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
-    _raise_if_access_denied(response, token)
+    _raise_if_access_denied(response, token or sig)
     if not response.component_blocks:
         raise HTTPException(status_code=404, detail="Component not found")
     comp = response.component_blocks[0]
@@ -297,7 +297,7 @@ async def head_component(request: Request, object_id: str, component_id: str, ve
 
 
 @app.get("/doip/retrieve/{object_id}/{component_id:path}")
-async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None), version: str = Query("latest")):
+async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None), version: str = Query("latest"), exp: str | None = Query(None), sig: str | None = Query(None)):
     """Stream a DOIP component to the caller as an HTTP download.
 
     Supports the ``Range`` request header (RFC 7233) so that clients such as
@@ -327,7 +327,7 @@ async def download_component(request: Request, object_id: str, component_id: str
         except Exception as exc:
             log.warning("Purge before reload failed, proceeding anyway", extra={"object_id": object_id}, exc_info=exc)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig)
     except ssl.SSLError as exc:
         log.warning(
             "TLS handshake with DOIP backend failed; retrying without TLS",
@@ -335,7 +335,7 @@ async def download_component(request: Request, object_id: str, component_id: str
             exc_info=exc,
         )
         client = _client(use_tls=False)
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig)
     except ConnectionError as exc:
         log.error(
             "Connection to DOIP backend closed unexpectedly; verify DOIP_BACKEND_HOST/PORT and TLS settings",
@@ -349,7 +349,7 @@ async def download_component(request: Request, object_id: str, component_id: str
         )
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
 
-    _raise_if_access_denied(response, token)
+    _raise_if_access_denied(response, token or sig)
     if not response.component_blocks:
         log.warning(
             "Component not found", extra={"object_id": object_id, "component_id": component_id}

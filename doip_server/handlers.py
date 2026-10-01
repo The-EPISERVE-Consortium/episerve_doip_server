@@ -12,6 +12,8 @@ import httpx
 from rocrate.rocrate import ROCrate
 from rocrate.model.file import File
 
+from doip_shared import signing
+
 from . import object_registry, protocol, storage_lakefs, workflows
 from .logging_config import log
 from .protocol import ComponentBlock, DOIPMessage
@@ -147,7 +149,7 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
         )
 
     if element:
-        await _require_read_access(pid, msg, registry)
+        await _require_read_access(pid, msg, registry, element=element)
         try:
             content, media_type = await registry.get_component(pid, element, version=version)
             size = len(content)
@@ -279,24 +281,44 @@ def _token_from_message(msg: DOIPMessage) -> str | None:
     return None
 
 
-async def _require_read_access(pid: str, msg: DOIPMessage, registry: object_registry.ObjectRegistry) -> None:
-    """Refuse file access to a restricted object unless the request carries the read token.
+def _signature_valid(msg: DOIPMessage, pid: str, element: str | None) -> bool:
+    """Return True if the request carries a valid signed link for this component.
+
+    Signed links (``exp`` + ``sig`` in the metadata block, see ``doip_shared.signing``)
+    are bound to one object and one component, so they apply to component
+    retrieves only (``element`` is ``None`` otherwise).
+    """
+    secret = storage_lakefs.get_link_secret()
+    if not secret or not element:
+        return False
+    for block in msg.metadata_blocks:
+        if isinstance(block, dict) and block.get("sig"):
+            return signing.verify(secret, pid, element, block.get("exp"), block.get("sig"))
+    return False
+
+
+async def _require_read_access(
+    pid: str, msg: DOIPMessage, registry: object_registry.ObjectRegistry, element: str | None = None
+) -> None:
+    """Refuse file access to a restricted object unless the request is authorized.
 
     Objects are restricted when their FDO has ``profile.accessRights == "restricted"``.
-    The check uses the current manifest, so it also applies to older versions of a
-    component. It fails closed: if the manifest cannot be read, access is refused,
+    Authorized means: the read token, or (for a component retrieve) a valid signed
+    link for exactly that component. The check uses the current manifest, so it also
+    applies to older versions of a component. It fails closed: if the manifest cannot be read, access is refused,
     and when no read token is configured on the server restricted objects are
     refused for everyone. Unrestricted objects are unaffected.
 
     Args:
         pid: Object identifier (QID).
-        msg: Incoming request; the credential is its ``token`` metadata field.
+        msg: Incoming request; credentials are its ``token`` or ``exp``/``sig`` metadata fields.
         registry: Object registry used to read the manifest.
+        element: Component being retrieved; enables signed-link authorization.
 
     Raises:
         KeyError: If the manifest cannot be read.
-        protocol.AccessDeniedError: If the object is restricted and the token is
-            missing, invalid, or not configured on the server.
+        protocol.AccessDeniedError: If the object is restricted and neither a valid
+            token nor a valid signed link is presented.
     """
     try:
         manifest = await registry.fetch_fdo_object(pid)
@@ -307,9 +329,12 @@ async def _require_read_access(pid: str, msg: DOIPMessage, registry: object_regi
 
     expected = storage_lakefs.get_read_token()
     provided = _token_from_message(msg)
-    if not expected or not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
-        log.warning("Rejected access to restricted object %s", pid)
-        raise protocol.AccessDeniedError("access to this object is restricted")
+    if expected and provided and hmac.compare_digest(provided.encode(), expected.encode()):
+        return
+    if _signature_valid(msg, pid, element):
+        return
+    log.warning("Rejected access to restricted object %s", pid)
+    raise protocol.AccessDeniedError("access to this object is restricted")
 
 
 def _validate_update_token(object_id: str, metadata: dict) -> None:

@@ -180,3 +180,10 @@ def test_read_token_override_takes_precedence(monkeypatch):
 def test_read_token_none_when_nothing_configured(monkeypatch):
     monkeypatch.setattr(storage_lakefs, "_CFG", {})
     assert storage_lakefs.get_read_token() is None
+
+
+def test_link_secret_is_separate_from_the_update_token(monkeypatch):
+    monkeypatch.setattr(storage_lakefs, "_CFG", {"lakefs": {"password": "lakefs-secret"}})
+    assert storage_lakefs.get_link_secret() is None
+    monkeypatch.setattr(storage_lakefs, "_CFG", {"lakefs": {"password": "lakefs-secret"}, "access": {"link_secret": "ls"}})
+    assert storage_lakefs.get_link_secret() == "ls"

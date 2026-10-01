@@ -90,6 +90,22 @@ def get_read_token() -> str | None:
     return get_update_token()
 
 
+def get_link_secret() -> str | None:
+    """Return the secret used to verify signed links to restricted components.
+
+    Set via ``DOIP_LINK_SECRET`` (or ``access.link_secret`` in ``config.yaml``) and
+    shared with whoever creates the links (the CKAN theme). Deliberately separate
+    from the update token: it can only create read links. When unset, signed
+    links are not accepted.
+
+    Returns:
+        str | None: Configured secret, or ``None`` when unset.
+    """
+    access_cfg = _CFG.get("access", {}) if isinstance(_CFG, dict) else {}
+    secret = access_cfg.get("link_secret") if isinstance(access_cfg, dict) else None
+    return secret if isinstance(secret, str) and secret else None
+
+
 def _endpoint_url() -> str | None:
     """Resolve the lakeFS/S3-compatible endpoint URL.
 

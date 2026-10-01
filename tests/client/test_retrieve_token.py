@@ -21,3 +21,11 @@ def test_no_token_and_no_environment_fallback(monkeypatch):
     sent = _capture(monkeypatch)
     StrictDOIPClient("h", 1, use_tls=False).retrieve("Q1", "f.parquet")
     assert "token" not in sent[0].metadata_blocks[0]
+
+
+def test_signed_link_fields_are_sent_together(monkeypatch):
+    sent = _capture(monkeypatch)
+    StrictDOIPClient("h", 1, use_tls=False).retrieve("Q1", "f.parquet", exp="4102444800", sig="abc")
+    block = sent[0].metadata_blocks[0]
+    assert block["sig"] == "abc" and block["exp"] == "4102444800"
+    assert "token" not in block
