@@ -278,26 +278,59 @@ async def head_component(request: Request, object_id: str, component_id: str, ve
     client = _client()
     token = _bearer_token(request)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig)
+        # Ask for a single byte: the backend reports the full size in ``totalSize``,
+        # so a HEAD never has to load the whole component.
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig, size=1)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
     _raise_if_access_denied(response, token or sig)
     if not response.component_blocks:
         raise HTTPException(status_code=404, detail="Component not found")
     comp = response.component_blocks[0]
+    meta = response.metadata_blocks[0] if response.metadata_blocks else {}
+    total = int(meta["totalSize"]) if "totalSize" in meta else len(comp.content)
     return Response(
         status_code=200,
         media_type=comp.media_type or "application/octet-stream",
         headers={
             "Content-Disposition": f'inline; filename="{Path(comp.component_id).name or "download"}"',
             "Accept-Ranges": "bytes",
-            "Content-Length": str(len(comp.content)),
+            "Content-Length": str(total),
         },
     )
 
 
+def _parse_byte_range(header: str | None) -> tuple[int, int | None] | None:
+    """Turn a simple HTTP ``Range`` header into a backend ``(offset, size)`` request.
+
+    Handles ``bytes=a-b``, ``bytes=a-`` and the suffix form ``bytes=-n`` (returned as a
+    negative offset). Returns None for anything else (no header, several ranges,
+    malformed or inverted ranges, ``bytes=0-``), in which case the caller serves the
+    whole component through the existing in-memory path.
+    """
+    if not header or not header.startswith("bytes="):
+        return None
+    spec = header.removeprefix("bytes=").strip()
+    if "," in spec or "-" not in spec:
+        return None
+    start_str, end_str = spec.split("-", 1)
+    try:
+        if not start_str:
+            length = int(end_str)
+            return (-length, None) if length > 0 else None
+        start = int(start_str)
+        if not end_str:
+            return (start, None) if start > 0 else None
+        end = int(end_str)
+    except ValueError:
+        return None
+    if start < 0 or end < start:
+        return None
+    return start, end - start + 1
+
+
 @app.get("/doip/retrieve/{object_id}/{component_id:path}")
-async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None), version: str = Query("latest"), exp: str | None = Query(None), sig: str | None = Query(None)):
+async def download_component(request: Request, object_id: str, component_id: str, force_reload: str | None = Query(None), version: str = Query("latest"), exp: str | None = Query(None), sig: str | None = Query(None), size: int | None = Query(None, ge=1)):
     """Stream a DOIP component to the caller as an HTTP download.
 
     Supports the ``Range`` request header (RFC 7233) so that clients such as
@@ -308,6 +341,11 @@ async def download_component(request: Request, object_id: str, component_id: str
         request: Incoming HTTP request (used to read the ``Range`` header).
         object_id: PID/QID of the target object.
         component_id: Component identifier to retrieve.
+        size: Optional number of bytes to return from the start of the component.
+            When omitted the whole component is served. When set, only that many
+            bytes are read from storage and returned as a 206 response whose
+            ``Content-Range`` header carries the total size (an HTTP ``Range``
+            header on the same request is ignored).
 
     Returns:
         Response: Full (200) or partial (206) component bytes with appropriate
@@ -321,13 +359,22 @@ async def download_component(request: Request, object_id: str, component_id: str
 
     client = _client()
     token = _bearer_token(request)
+    # An explicit ``size`` wins; otherwise a plain Range header is passed to the backend as
+    # offset/size so only those bytes are read from storage.
+    byte_range = _parse_byte_range(request.headers.get("range")) if size is None else None
+    if size is not None:
+        size_kwargs = {"size": size}
+    elif byte_range is not None:
+        size_kwargs = {"offset": byte_range[0], **({"size": byte_range[1]} if byte_range[1] is not None else {})}
+    else:
+        size_kwargs = {}
     if force_reload is not None:
         try:
             await asyncio.to_thread(client.purge, object_id)
         except Exception as exc:
             log.warning("Purge before reload failed, proceeding anyway", extra={"object_id": object_id}, exc_info=exc)
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig, **size_kwargs)
     except ssl.SSLError as exc:
         log.warning(
             "TLS handshake with DOIP backend failed; retrying without TLS",
@@ -335,7 +382,7 @@ async def download_component(request: Request, object_id: str, component_id: str
             exc_info=exc,
         )
         client = _client(use_tls=False)
-        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig)
+        response = await asyncio.to_thread(client.retrieve, object_id, component_id, version, token=token, exp=exp, sig=sig, **size_kwargs)
     except ConnectionError as exc:
         log.error(
             "Connection to DOIP backend closed unexpectedly; verify DOIP_BACKEND_HOST/PORT and TLS settings",
@@ -350,6 +397,13 @@ async def download_component(request: Request, object_id: str, component_id: str
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")
 
     _raise_if_access_denied(response, token or sig)
+    meta = response.metadata_blocks[0] if response.metadata_blocks else {}
+    if meta.get("rangeNotSatisfiable"):
+        raise HTTPException(
+            status_code=416,
+            detail="Range Not Satisfiable",
+            headers={"Content-Range": f"bytes */{meta.get('totalSize', 0)}"},
+        )
     if not response.component_blocks:
         log.warning(
             "Component not found", extra={"object_id": object_id, "component_id": component_id}
@@ -361,6 +415,29 @@ async def download_component(request: Request, object_id: str, component_id: str
     filename = Path(comp.component_id).name or "download"
     content = comp.content
     total = len(content)
+
+    if size is not None and "totalSize" not in meta:
+        # Backend ignored ``size`` and sent the whole component: cut it down here.
+        meta = {"totalSize": len(content), "offset": 0}
+        content = content[:size]
+
+    if "totalSize" in meta and (size is not None or byte_range is not None):
+        # The backend read only the requested bytes; ``totalSize`` is the full component size.
+        total = int(meta["totalSize"])
+        start = int(meta.get("offset", 0))
+        if len(content) < total:
+            log.info("Serving bytes %d-%d of %d", start, start + len(content) - 1, total, extra={"object_id": object_id})
+            return Response(
+                content=content,
+                status_code=206,
+                media_type=media_type,
+                headers={
+                    "Content-Disposition": f'inline; filename="{filename}"',
+                    "Accept-Ranges": "bytes",
+                    "Content-Range": f"bytes {start}-{start + len(content) - 1}/{total}",
+                    "Content-Length": str(len(content)),
+                },
+            )
 
     log.info(
         "Serving component", extra={"object_id": object_id, "component_id": component_id, "media_type": media_type, "size": total}

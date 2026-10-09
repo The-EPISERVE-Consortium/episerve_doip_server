@@ -118,6 +118,57 @@ class ObjectRegistry:
 
         return content, media_type
 
+    async def get_component_range(
+        self,
+        object_id: str,
+        component_id: str,
+        offset: int = 0,
+        size: int | None = None,
+        version: str | None = None,
+    ) -> tuple[bytes, str, int, int]:
+        """Like ``get_component`` but loads only a byte range from storage.
+
+        Args:
+            object_id: PID/QID containing the component.
+            component_id: Identifier of the component to load.
+            offset: First byte to read; negative counts from the end of the component.
+            size: Number of bytes to read from ``offset``, or None to read to the end.
+            version: Commit ID to read from, or None/"latest" for the current branch.
+
+        Returns:
+            tuple[bytes, str, int, int]: Bytes read, resolved media type, offset of the
+            first byte read, and the total size of the component in bytes.
+
+        Raises:
+            storage_lakefs.RangeNotSatisfiableError: When ``offset`` is beyond the end.
+            RuntimeError: When the storage backend is unavailable or errors.
+            KeyError: When the component is missing.
+        """
+        log.info(f"get_component_range() for {object_id}/{component_id} offset={offset} size={size} version={version}")
+
+        manifest, repo = await self._resolve(object_id)
+        component = _find_component(component_id, manifest)
+        if component is None:
+            raise KeyError(f"component-not-found:{component_id}")
+
+        media_type = _component_media_type(component)
+
+        if not await storage_lakefs.ensure_lakefs_available():
+            raise ConnectionError()
+
+        try:
+            content, start, total = await storage_lakefs.get_component_range(
+                object_id, component_id, repo, offset=offset, size=size, version=version
+            )
+        except storage_lakefs.RangeNotSatisfiableError:
+            raise
+        except KeyError as exc:
+            raise KeyError(f"component-not-found:{component_id}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("storage-backend error") from exc
+
+        return content, media_type, start, total
+
     async def get_manifest(self, qid: str) -> Dict:
         """Return the manifest (FDO JSON) for a base QID.
 

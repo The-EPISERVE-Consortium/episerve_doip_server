@@ -87,7 +87,7 @@ class StrictDOIPClient:
         response = self.send_message(request)
         return response.metadata_blocks[0] if response.metadata_blocks else {}
 
-    def retrieve(self, object_id: str, component_id: str = None, version: str | None = None, limit: int | None = None, include_sizes: bool = False, token: str | None = None, exp: int | str | None = None, sig: str | None = None) -> DoipResponse:
+    def retrieve(self, object_id: str, component_id: str = None, version: str | None = None, limit: int | None = None, include_sizes: bool = False, token: str | None = None, exp: int | str | None = None, sig: str | None = None, size: int | None = None, offset: int | None = None) -> DoipResponse:
         """Retrieve the primary payload for a given object ID.
 
         Args:
@@ -100,6 +100,15 @@ class StrictDOIPClient:
                 (no environment fallback, so a server-side process never sends its own).
             exp: Expiry (unix seconds) of a signed link; sent together with ``sig``.
             sig: Signature of a signed link for this component (see ``doip_shared.signing``).
+            size: When set, only ``size`` bytes of the component are returned (from ``offset``,
+                default the start). The response then carries a metadata block with ``totalSize``,
+                ``offset`` and ``partial``. When omitted (and no ``offset``), the whole component
+                is returned.
+            offset: First byte to return. Negative counts from the end of the component
+                (the last ``-offset`` bytes) and cannot be combined with ``size``. Without
+                ``size`` the component is returned from ``offset`` to its end. A request that
+                starts beyond the end gets a metadata block with ``rangeNotSatisfiable`` and
+                no component.
 
         Returns:
             Parsed DOIP response envelope.
@@ -113,6 +122,10 @@ class StrictDOIPClient:
             meta["limit"] = limit
         if include_sizes:
             meta["include_sizes"] = True
+        if size is not None:
+            meta["size"] = size
+        if offset is not None:
+            meta["offset"] = offset
         if token:
             meta["token"] = token
         if sig:

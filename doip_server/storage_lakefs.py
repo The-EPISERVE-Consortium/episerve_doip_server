@@ -8,6 +8,7 @@ from typing import AsyncGenerator, Dict, List, Tuple
 import boto3
 import httpx
 from botocore.client import Config, BaseClient
+from botocore.exceptions import ClientError
 
 from .logging_config import log
 from doip_shared.sharding import get_component_path, shard_qid
@@ -218,6 +219,84 @@ async def get_component_bytes(object_id: str, component_id: str, repo: str, vers
         raise KeyError(f"S3 object not found: {key}") from exc
 
     return response["Body"].read()
+
+
+class RangeNotSatisfiableError(Exception):
+    """The requested byte range starts beyond the end of the component."""
+
+    def __init__(self, total: int):
+        super().__init__(f"range not satisfiable, component has {total} bytes")
+        self.total = total
+
+
+async def get_component_range(
+    object_id: str,
+    component_id: str,
+    repo: str,
+    offset: int = 0,
+    size: int | None = None,
+    version: str | None = None,
+) -> tuple[bytes, int, int]:
+    """Fetch part of a component with an S3 ``Range`` request; the rest is never read.
+
+    Args:
+        object_id: Object identifier/QID.
+        component_id: Component identifier (e.g. "fulltext").
+        repo: lakeFS repository name to read from.
+        offset: First byte to read. A negative value reads the last ``-offset`` bytes
+            of the component (and then ``size`` must be omitted).
+        size: Number of bytes to read from ``offset`` (>= 1), or None to read to the end.
+        version: Commit ID to read from, or None/"latest" for the current branch.
+
+    Returns:
+        tuple[bytes, int, int]: The bytes read, the offset of the first of them, and the
+        total size of the component in bytes.
+
+    Raises:
+        ValueError: If ``size`` is not positive, or is combined with a negative ``offset``.
+        RangeNotSatisfiableError: If ``offset`` is at or beyond the end of the component.
+        KeyError: If the component is not found in storage.
+    """
+    if size is not None and size < 1:
+        raise ValueError("size must be a positive integer")
+    if offset < 0 and size is not None:
+        raise ValueError("size cannot be combined with an offset counted from the end")
+
+    if offset < 0:
+        byte_range = f"bytes={offset}"  # suffix range, e.g. "bytes=-1024"
+    elif size is None:
+        byte_range = f"bytes={offset}-"
+    else:
+        byte_range = f"bytes={offset}-{offset + size - 1}"
+
+    qid = _extract_qid(object_id)
+    ref = version if (version and version != "latest") else None
+    key = build_object_key(qid, component_id, branch=ref)
+
+    log.info("Retrieving lakeFS object repo=%s key=%s %s", repo, key, byte_range)
+
+    try:
+        response = await asyncio.to_thread(_client().get_object, Bucket=repo, Key=key, Range=byte_range)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "InvalidRange":
+            try:
+                head = await asyncio.to_thread(_client().head_object, Bucket=repo, Key=key)
+            except Exception as head_exc:
+                raise KeyError(f"S3 object not found: {key}") from head_exc
+            raise RangeNotSatisfiableError(int(head["ContentLength"])) from exc
+        raise KeyError(f"S3 object not found: {key}") from exc
+    except Exception as exc:
+        raise KeyError(f"S3 object not found: {key}") from exc
+
+    content = response["Body"].read()
+    # ContentRange looks like "bytes 1024-2047/3571405900"; absent when the whole object came back.
+    content_range = response.get("ContentRange") or ""
+    if "/" in content_range:
+        start = int(content_range.split(" ", 1)[1].split("-", 1)[0])
+        total = int(content_range.rsplit("/", 1)[1])
+    else:
+        start, total = 0, len(content)
+    return content, start, total
 
 async def put_component_bytes(
     object_id: str,

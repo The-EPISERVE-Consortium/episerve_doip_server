@@ -75,6 +75,28 @@ async def handle_describe(msg: DOIPMessage, registry: object_registry.ObjectRegi
     )
 
 
+def _int(value, name: str) -> int | None:
+    """Parse an optional integer request field.
+
+    Raises:
+        protocol.ProtocolError: If the value is present but not an integer.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise protocol.ProtocolError(f"retrieve {name} must be an integer")
+
+
+def _positive_int(value, name: str) -> int | None:
+    """Parse an optional request field that must be an integer >= 1."""
+    parsed = _int(value, name)
+    if parsed is not None and parsed < 1:
+        raise protocol.ProtocolError(f"retrieve {name} must be a positive integer")
+    return parsed
+
+
 async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegistry) -> DOIPMessage:
     """Retrieve metadata or a specific component for a DOIP object.
 
@@ -150,9 +172,37 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
 
     if element:
         await _require_read_access(pid, msg, registry, element=element)
+        requested_size = _positive_int(meta.get("size"), "size")
+        requested_offset = _int(meta.get("offset"), "offset")
+        if requested_offset is not None and requested_offset < 0 and requested_size is not None:
+            raise protocol.ProtocolError("retrieve size cannot be combined with a negative offset")
+        ranged = requested_size is not None or bool(requested_offset)
+
+        metadata_blocks: list = []
         try:
-            content, media_type = await registry.get_component(pid, element, version=version)
+            if not ranged:
+                content, media_type = await registry.get_component(pid, element, version=version)
+            else:
+                content, media_type, start, total_size = await registry.get_component_range(
+                    pid, element, offset=requested_offset or 0, size=requested_size, version=version
+                )
+                metadata_blocks = [{
+                    "element": element,
+                    "partial": len(content) < total_size,
+                    "offset": start,
+                    "totalSize": total_size,
+                }]
             size = len(content)
+        except storage_lakefs.RangeNotSatisfiableError as exc:
+            return DOIPMessage(
+                version=protocol.DOIP_VERSION,
+                msg_type=protocol.MSG_TYPE_RESPONSE,
+                operation=protocol.OP_RETRIEVE,
+                flags=0,
+                object_id=pid,
+                metadata_blocks=[{"element": element, "rangeNotSatisfiable": True, "totalSize": exc.total}],
+                component_blocks=[],
+            )
         except Exception as exc:
             raise KeyError(f"Component id not found: {element}") from exc
 
@@ -162,7 +212,7 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
             operation=protocol.OP_RETRIEVE,
             flags=0,
             object_id=pid,
-            metadata_blocks=[],
+            metadata_blocks=metadata_blocks,
             component_blocks=[
                 ComponentBlock(
                     component_id=element,

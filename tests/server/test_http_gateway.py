@@ -25,7 +25,7 @@ class FakeClient:
         self.tokens = []
         self.signed = []
 
-    def retrieve(self, object_id, component_id=None, version=None, limit=None, include_sizes=False, token=None, exp=None, sig=None):
+    def retrieve(self, object_id, component_id=None, version=None, limit=None, include_sizes=False, token=None, exp=None, sig=None, size=None):
         self.tokens.append(token)
         self.signed.append((exp, sig))
         if token != "good" and sig != "validsig":
