@@ -662,7 +662,7 @@
 <ul>
 <li><code>hello()</code>: Health check and capability discovery.</li>
 <li><code>list_ops()</code>: Fetch the <code>availableOperations</code> map.</li>
-<li><code>retrieve(object_id, component=None)</code>: Return metadata blocks or a specific component.</li>
+<li><code>retrieve(object_id, component_id=None, version=None, ..., size=None, offset=None)</code>: Return metadata blocks or a specific component. With <code>size</code> and/or <code>offset</code> only that byte range of the component is read from storage (see below).</li>
 <li><code>update_component(object_id, component_id, content, media_type=...)</code>: Update one component on an existing object and trigger a lakeFS commit.</li>
 <li><code>invoke(object_id, workflow, params=None)</code>: Trigger a workflow; receives workflow metadata and derived components.</li>
 </ul>
@@ -676,9 +676,19 @@
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">retrieve</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="s2">"doip:bitstream/Q123/main-pdf"</span><span class="p">)</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">update</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">update_component</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="s2">"fulltext.pdf"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"new-pdf-bytes"</span><span class="p">,</span> <span class="n">media_type</span><span class="o">=</span><span class="s2">"application/pdf"</span><span class="p">)</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Invoke a workflow with parameters</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="n">workflow</span><span class="o">=</span><span class="s2">"equation_extraction"</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s2">"pages"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]})</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Partial retrieve: only the requested bytes are read from storage</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">r</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">retrieve</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="s2">"data.parquet"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>               <span class="c1"># first 1 KiB</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">r</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">retrieve</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="s2">"data.parquet"</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">8192</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">4096</span><span class="p">)</span>  <span class="c1"># 4 KiB from byte 8192</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">r</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">retrieve</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="s2">"data.parquet"</span><span class="p">,</span> <span class="n">offset</span><span class="o">=-</span><span class="mi">8</span><span class="p">)</span>               <span class="c1"># last 8 bytes</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">r</span><span class="o">.</span><span class="n">component_blocks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">content</span>       <span class="c1"># the bytes</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">r</span><span class="o">.</span><span class="n">metadata_blocks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>                <span class="c1"># {"offset": ..., "totalSize": ..., "partial": True, ...}</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># Invoke a workflow with parameters</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="s2">"Q123"</span><span class="p">,</span> <span class="n">workflow</span><span class="o">=</span><span class="s2">"equation_extraction"</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s2">"pages"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]})</span>
 </code></pre></div>
+<h3 id="partial-retrieves">Partial retrieves<a class="headerlink" href="#partial-retrieves" title="Permanent link">&para;</a></h3>
+<p><code>size</code> is a positive number of bytes. <code>offset</code> is the first byte; a negative <code>offset</code> counts from the end and cannot be combined with <code>size</code>. Without <code>size</code>, <code>offset</code> reads to the end of the component. Without either, the whole component is returned as before.</p>
+<p>The response carries a metadata block with <code>offset</code> (first byte returned), <code>totalSize</code> (size of the whole component) and <code>partial</code>. If <code>offset</code> is beyond the end, there is no component block and the metadata block has <code>rangeNotSatisfiable: true</code> together with <code>totalSize</code>.</p>
 <h3 id="tls-verification">TLS &amp; verification<a class="headerlink" href="#tls-verification" title="Permanent link">&para;</a></h3>
 <p>Pass <code>use_tls=True</code> to wrap the socket. If you use self-signed certs during development, combine <code>use_tls=True</code> with <code>verify=False</code> to skip hostname verification.</p>
 <h3 id="timeouts">Timeouts<a class="headerlink" href="#timeouts" title="Permanent link">&para;</a></h3>
@@ -889,6 +899,12 @@
             Usage
         </a>
         
+        
+        <a href="#partial-retrieves"
+            class="text-muted-foreground hover:text-foreground data-[active=true]:text-foreground text-[0.8rem] no-underline transition-colors data-[depth=3]:pl-4 data-[depth=4]:pl-6"
+            data-active="false" data-depth="3" onClick="deferSetActiveTocLink('#partial-retrieves');">
+            Partial retrieves
+        </a>
         
         <a href="#tls-verification"
             class="text-muted-foreground hover:text-foreground data-[active=true]:text-foreground text-[0.8rem] no-underline transition-colors data-[depth=3]:pl-4 data-[depth=4]:pl-6"

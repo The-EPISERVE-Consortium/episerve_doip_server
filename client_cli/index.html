@@ -676,6 +676,8 @@
 <li><code>--workflow</code>: Workflow name (invoke action, default <code>equation_extraction</code>)</li>
 <li><code>--params</code>: Workflow parameters as JSON string (invoke action)</li>
 <li><code>--output</code>: Path or directory to save the first retrieved component (retrieve action)</li>
+<li><code>--size</code>: Fetch only this many bytes of the component, starting at <code>--offset</code> (default: the start). Retrieve with <code>--component</code> only.</li>
+<li><code>--offset</code>: First byte to fetch. A negative value counts from the end (<code>--offset -8</code> is the last 8 bytes) and cannot be combined with <code>--size</code>. Without <code>--size</code>, fetches from the offset to the end. Retrieve with <code>--component</code> only.</li>
 </ul>
 <p>When saving to a directory, the original filename provided by the server is preserved when present.</p>
 <h3 id="actions">Actions<a class="headerlink" href="#actions" title="Permanent link">&para;</a></h3>
@@ -696,11 +698,22 @@
 <h3 id="example-download-a-pdf">Example: Download a PDF<a class="headerlink" href="#example-download-a-pdf" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--action<span class="w"> </span>retrieve<span class="w"> </span>--object-id<span class="w"> </span>Q6190920<span class="w"> </span>--component<span class="w"> </span>fulltext.pdf<span class="w"> </span>--output<span class="w"> </span>.
 </code></pre></div>
+<h3 id="example-download-part-of-a-large-component">Example: Download part of a large component<a class="headerlink" href="#example-download-part-of-a-large-component" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># First 1 MiB</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--action<span class="w"> </span>retrieve<span class="w"> </span>--object-id<span class="w"> </span>Q6190920<span class="w"> </span>--component<span class="w"> </span>data.parquet<span class="w"> </span>--size<span class="w"> </span><span class="m">1048576</span><span class="w"> </span>--output<span class="w"> </span>head.bin
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># 4 KiB starting at byte 8192</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--action<span class="w"> </span>retrieve<span class="w"> </span>--object-id<span class="w"> </span>Q6190920<span class="w"> </span>--component<span class="w"> </span>data.parquet<span class="w"> </span>--offset<span class="w"> </span><span class="m">8192</span><span class="w"> </span>--size<span class="w"> </span><span class="m">4096</span><span class="w"> </span>--output<span class="w"> </span>part.bin
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># The last 8 bytes (a Parquet file ends with its footer length and magic bytes)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--action<span class="w"> </span>retrieve<span class="w"> </span>--object-id<span class="w"> </span>Q6190920<span class="w"> </span>--component<span class="w"> </span>data.parquet<span class="w"> </span>--offset<span class="w"> </span>-8<span class="w"> </span>--output<span class="w"> </span>tail.bin
+</code></pre></div>
+<p>Only the requested bytes are read from storage. With <code>--force-json-output</code> the result also contains <code>offset</code>, <code>totalSize</code> and <code>partial</code>. An offset beyond the end of the component is an error that reports the component's size.</p>
 <h3 id="example-download-a-ro-crate">Example: Download a RO-CRATE<a class="headerlink" href="#example-download-a-ro-crate" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--host<span class="w"> </span>localhost<span class="w"> </span>--no-tls<span class="w"> </span>--action<span class="w"> </span>retrieve<span class="w"> </span>--object-id<span class="w"> </span>Q6032968<span class="w"> </span>--component<span class="w"> </span>rocrate<span class="w"> </span>--output<span class="w"> </span>crate.zip
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--host<span class="w"> </span>localhost<span class="w"> </span>--no-tls<span class="w"> </span>--action<span class="w"> </span>retrieve<span class="w"> </span>--object-id<span class="w"> </span>Q6032968<span class="w"> </span>--component<span class="w"> </span>rocrate<span class="w"> </span>--output<span class="w"> </span>crate.zip
 </code></pre></div>
 <h3 id="example-update-one-component">Example: Update One Component<a class="headerlink" href="#example-update-one-component" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--no-tls<span class="w"> </span>--action<span class="w"> </span>update<span class="w"> </span>--object-id<span class="w"> </span>Q6190920<span class="w"> </span>--component<span class="w"> </span>fulltext.pdf<span class="w"> </span>--input<span class="w"> </span>pdf.pdf<span class="w"> </span>--media-type<span class="w"> </span>application/pdf<span class="w"> </span>--update-token<span class="w"> </span><span class="s2">"</span><span class="nv">$DOIP_UPDATE_TOKEN</span><span class="s2">"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>client_cli.main<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--no-tls<span class="w"> </span>--action<span class="w"> </span>update<span class="w"> </span>--object-id<span class="w"> </span>Q6190920<span class="w"> </span>--component<span class="w"> </span>fulltext.pdf<span class="w"> </span>--input<span class="w"> </span>pdf.pdf<span class="w"> </span>--media-type<span class="w"> </span>application/pdf<span class="w"> </span>--update-token<span class="w"> </span><span class="s2">"</span><span class="nv">$DOIP_UPDATE_TOKEN</span><span class="s2">"</span>
 </code></pre></div>
 <p><code>update</code> is component-scoped. It updates or adds the specified component and leaves all other components unchanged.
 Component IDs are exact storage names. If you upload <code>fulltext</code>, retrieve <code>fulltext</code>. If you upload <code>fulltext.pdf</code>, retrieve <code>fulltext.pdf</code>.</p>
@@ -910,6 +923,12 @@ Component IDs are exact storage names. If you upload <code>fulltext</code>, retr
             class="text-muted-foreground hover:text-foreground data-[active=true]:text-foreground text-[0.8rem] no-underline transition-colors data-[depth=3]:pl-4 data-[depth=4]:pl-6"
             data-active="false" data-depth="3" onClick="deferSetActiveTocLink('#example-download-a-pdf');">
             Example: Download a PDF
+        </a>
+        
+        <a href="#example-download-part-of-a-large-component"
+            class="text-muted-foreground hover:text-foreground data-[active=true]:text-foreground text-[0.8rem] no-underline transition-colors data-[depth=3]:pl-4 data-[depth=4]:pl-6"
+            data-active="false" data-depth="3" onClick="deferSetActiveTocLink('#example-download-part-of-a-large-component');">
+            Example: Download part of a large component
         </a>
         
         <a href="#example-download-a-ro-crate"

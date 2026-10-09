@@ -665,8 +665,22 @@
 <li>Sets <code>Content-Type</code> from the component's <code>media_type</code> (defaults to <code>application/octet-stream</code>).</li>
 <li>Adds <code>Content-Disposition: attachment; filename="&lt;component_id_basename&gt;"</code> so browsers download instead of render.</li>
 <li>Returns <code>404</code> if no component blocks are present; <code>502</code> for backend failures.</li>
+<li>Accepts an optional <code>?force_reload</code> query parameter. When present, the server-side manifest cache for the object is purged before the component is fetched, ensuring fresh data is returned.</li>
 <li>
-<p>Accepts an optional <code>?force_reload</code> query parameter. When present, the server-side manifest cache for the object is purged before the component is fetched, ensuring fresh data is returned.</p>
+<p>Supports partial downloads, so large components (for example Parquet files) never have to be read completely. Only the requested bytes are read from lakeFS (an S3 <code>Range</code> request):</p>
+<ul>
+<li><code>Range: bytes=a-b</code>, <code>bytes=a-</code> and the suffix form <code>bytes=-n</code> are answered with <code>206 Partial Content</code> and a <code>Content-Range: bytes start-end/total</code> header. A range that starts beyond the end of the component gets <code>416</code> with <code>Content-Range: bytes */total</code>.</li>
+<li><code>?size=N</code> returns the first <code>N</code> bytes as <code>206</code> (or the whole component with <code>200</code> when it is not longer than <code>N</code>). If a request has both <code>?size</code> and a <code>Range</code> header, <code>size</code> wins.</li>
+<li>Multiple ranges, malformed headers and <code>bytes=0-</code> are served as the whole component.</li>
+<li>Without <code>size</code> or <code>Range</code>, the whole component is served as before.</li>
+<li><code>exp</code>/<code>sig</code> (signed links) and Bearer tokens work the same way for partial requests.</li>
+</ul>
+</li>
+<li>
+<p><code>HEAD /doip/retrieve/{object_id}/{component_id}</code></p>
+</li>
+<li>
+<p>Returns the same headers as <code>GET</code> without a body, including the real <code>Content-Length</code> of the component. The size is read from a one-byte request, so the component is not loaded. Clients such as the CKAN Parquet viewer use this before issuing <code>Range</code> requests.</p>
 </li>
 <li>
 <p><code>POST /doip/purge/{object_id}</code></p>
@@ -683,8 +697,15 @@
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Download a component, bypassing the cache</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>curl<span class="w"> </span>-OJ<span class="w"> </span><span class="s2">"http://localhost/doip/retrieve/Q6033164/fulltext?force_reload"</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Purge the cache for an object without downloading</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost/doip/purge/Q6033164
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># First 1 KiB of a component (206, Content-Range shows the total size)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>curl<span class="w"> </span>-s<span class="w"> </span>-D<span class="w"> </span>-<span class="w"> </span>-o<span class="w"> </span>head.bin<span class="w"> </span><span class="s2">"http://localhost/doip/retrieve/Q6033164/fulltext?size=1024"</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Bytes 1000-1999, and the last 8 bytes (e.g. a Parquet footer)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>curl<span class="w"> </span>-r<span class="w"> </span><span class="m">1000</span>-1999<span class="w"> </span>-o<span class="w"> </span>part.bin<span class="w"> </span>http://localhost/doip/retrieve/Q6033164/fulltext
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>curl<span class="w"> </span>-r<span class="w"> </span>-8<span class="w"> </span>-o<span class="w"> </span>tail.bin<span class="w"> </span>http://localhost/doip/retrieve/Q6033164/fulltext
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Purge the cache for an object without downloading</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost/doip/purge/Q6033164
 </code></pre></div>
 <h2 id="backend-connection">Backend connection<a class="headerlink" href="#backend-connection" title="Permanent link">&para;</a></h2>
 <p>The gateway talks to the DOIP binary server via <code>StrictDOIPClient</code>. Host/port are resolved in this order:</p>
