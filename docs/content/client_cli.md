@@ -22,6 +22,8 @@ Options:
 - `--workflow`: Workflow name (invoke action, default `equation_extraction`)
 - `--params`: Workflow parameters as JSON string (invoke action)
 - `--output`: Path or directory to save the first retrieved component (retrieve action)
+- `--size`: Fetch only this many bytes of the component, starting at `--offset` (default: the start). Retrieve with `--component` only.
+- `--offset`: First byte to fetch. A negative value counts from the end (`--offset -8` is the last 8 bytes) and cannot be combined with `--size`. Without `--size`, fetches from the offset to the end. Retrieve with `--component` only.
 
 When saving to a directory, the original filename provided by the server is preserved when present.
 
@@ -42,6 +44,20 @@ When saving to a directory, the original filename provided by the server is pres
 ```bash
 PYTHONPATH=. python -m client_cli.main --action retrieve --object-id Q6190920 --component fulltext.pdf --output .
 ```
+
+### Example: Download part of a large component
+```bash
+# First 1 MiB
+PYTHONPATH=. python -m client_cli.main --action retrieve --object-id Q6190920 --component data.parquet --size 1048576 --output head.bin
+
+# 4 KiB starting at byte 8192
+PYTHONPATH=. python -m client_cli.main --action retrieve --object-id Q6190920 --component data.parquet --offset 8192 --size 4096 --output part.bin
+
+# The last 8 bytes (a Parquet file ends with its footer length and magic bytes)
+PYTHONPATH=. python -m client_cli.main --action retrieve --object-id Q6190920 --component data.parquet --offset -8 --output tail.bin
+```
+
+Only the requested bytes are read from storage. With `--force-json-output` the result also contains `offset`, `totalSize` and `partial`. An offset beyond the end of the component is an error that reports the component's size.
 
 ### Example: Download a RO-CRATE
 ```bash

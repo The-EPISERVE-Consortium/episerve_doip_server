@@ -73,6 +73,14 @@ HTTP gateway example (streams the component as a file download):
 curl -OJ http://localhost/doip/retrieve/Q1748526042817/components/output/predictions.tsv
 ```
 
+The gateway also serves partial content, reading only the requested bytes from lakeFS:
+
+```bash
+curl -r 0-1023 http://localhost/doip/retrieve/Q1748526042817/components/output/predictions.tsv   # Range request (206)
+curl "http://localhost/doip/retrieve/Q1748526042817/components/output/predictions.tsv?size=1024"  # first 1 KiB
+curl -I http://localhost/doip/retrieve/Q1748526042817/components/output/predictions.tsv          # size without loading the file
+```
+
 ## Using the client CLI
 
 Hello:
@@ -94,6 +102,14 @@ Retrieve a component (predictions file):
 PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action retrieve \
   --object-id Q1748526042817 --component components/output/predictions.tsv \
   --output predictions.tsv
+```
+
+Retrieve only part of a component (`--size` bytes from `--offset`; a negative offset counts from the end):
+
+```bash
+PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action retrieve \
+  --object-id Q1748526042817 --component components/output/predictions.tsv \
+  --size 4096 --output head.tsv
 ```
 
 Update a component:

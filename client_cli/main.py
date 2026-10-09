@@ -69,6 +69,39 @@ def _resolve_cli_read_token(explicit_token: str | None) -> str | None:
     return explicit_token or os.getenv("DOIP_READ_TOKEN") or os.getenv("DOIP_UPDATE_TOKEN") or None
 
 
+def _range_kwargs(args) -> dict:
+    """Return the ``size``/``offset`` keyword arguments for ``client.retrieve``.
+
+    Only options that were given are included, so a plain retrieve is unchanged.
+
+    Raises:
+        ValueError: If ``--size`` is not positive, or is combined with a negative ``--offset``.
+    """
+    kwargs = {}
+    if args.size is not None:
+        if args.size < 1:
+            raise ValueError("--size must be a positive integer.")
+        kwargs["size"] = args.size
+    if args.offset is not None:
+        if args.offset < 0 and args.size is not None:
+            raise ValueError("--size cannot be combined with a negative --offset.")
+        kwargs["offset"] = args.offset
+    return kwargs
+
+
+def _range_info(r) -> dict:
+    """Summarise a partial retrieve (offset, total size, partial flag) from the response metadata."""
+    meta = r.metadata_blocks[0] if r.metadata_blocks else {}
+    return {k: meta[k] for k in ("offset", "totalSize", "partial") if k in meta}
+
+
+def _raise_if_range_unsatisfiable(r) -> None:
+    """Raise ValueError when the server reports the requested range starts beyond the component's end."""
+    meta = r.metadata_blocks[0] if r.metadata_blocks else {}
+    if meta.get("rangeNotSatisfiable"):
+        raise ValueError(f"Requested range is beyond the end of the component ({meta.get('totalSize')} bytes).")
+
+
 def _raise_if_denied(response) -> None:
     """Raise a clear error when the server refused access to a restricted object."""
     if response.header.msg_type != MSG_TYPE_ERROR:
@@ -149,8 +182,9 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
                     "--force-json-output is set (binary content cannot share stdout)."
                 )
             r = client.retrieve(args.object_id, component_id=args.component, version=args.version,
-                                token=_resolve_cli_read_token(args.read_token))
+                                token=_resolve_cli_read_token(args.read_token), **_range_kwargs(args))
             _raise_if_denied(r)
+            _raise_if_range_unsatisfiable(r)
             if not r.component_blocks:
                 raise ValueError(f"Component {args.component} not found.")
             block = r.component_blocks[0]
@@ -160,6 +194,7 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
                 "saved_to": args.output,
                 "media_type": block.media_type,
                 "bytes": len(block.content),
+                **_range_info(r),
             }
         r = client.retrieve(args.object_id)
         return oid, {"metadata_blocks": r.metadata_blocks}
@@ -267,12 +302,35 @@ def main(argv: list[str] | None = None) -> int:
         help="Workflow params as JSON string (for invoke)",
     )
     parser.add_argument(
+        "--size",
+        type=int,
+        default=None,
+        help="Component retrieve only: fetch just this many bytes (from --offset, default the start) "
+             "instead of the whole component.",
+    )
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="Component retrieve only: first byte to fetch. Negative counts from the end "
+             "(e.g. --offset -8 for the last 8 bytes; cannot be combined with --size). "
+             "Without --size, fetches from the offset to the end.",
+    )
+    parser.add_argument(
         "--version",
         default="latest",
         help="Commit ID to retrieve (retrieve action only). Defaults to latest.",
     )
 
     args = parser.parse_args(argv)
+
+    if args.size is not None or args.offset is not None:
+        if not (args.action == "retrieve" and args.component):
+            parser.error("--size and --offset only apply to --action retrieve with --component.")
+        try:
+            _range_kwargs(args)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     if args.force_json_output:
         logging.disable(logging.INFO)  # keep WARNING+ on stderr, drop the DEBUG/INFO stream
@@ -326,8 +384,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "retrieve":
             if args.component:
                 r = client.retrieve(args.object_id, component_id=args.component, version=args.version,
-                                    token=_resolve_cli_read_token(args.read_token))
+                                    token=_resolve_cli_read_token(args.read_token), **_range_kwargs(args))
                 _raise_if_denied(r)
+                try:
+                    _raise_if_range_unsatisfiable(r)
+                except ValueError as exc:
+                    logging.getLogger().error("%s", exc)
+                    return 1
                 blocks = r.component_blocks
                 if not blocks:
                     logging.getLogger().error("Component %s not found.", args.component)
