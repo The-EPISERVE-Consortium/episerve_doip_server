@@ -49,4 +49,4 @@ The client uses blocking sockets; wrap calls in your own timeout logic if needed
 - Component IDs are exact names. The server does not add or infer extensions for storage paths.
 
 ## Compatibility listener support
-The Python client speaks strict DOIP. To talk to the compatibility JSON-segment listener (`port + 1`), use the **Client CLI** which wraps the same client but performs JSON bridging for you.
+The Python client and the **Client CLI** both speak strict binary DOIP only. Neither talks to the compatibility listener (`port + 1`), and that listener's custom length-prefixed framing is not compatible with `doipy`. See **Server → Compatibility listener**.

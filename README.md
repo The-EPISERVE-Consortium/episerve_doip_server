@@ -11,7 +11,7 @@ Pre-built binaries are published with every [GitHub Release](https://github.com/
 | Port | Protocol | Description |
 |---|---|---|
 | `3567` | TCP (binary DOIP) | Primary DOIP 2.0 listener (strict binary envelopes) |
-| `3568` | TCP (JSON-segmented) | Compat listener for legacy `doipy`-style clients |
+| `3568` | TCP (length-prefixed JSON) | Compat listener with custom framing. **Not** compatible with `doipy` (see below). Not exposed on the EPISERVE deployment. |
 | `80` | HTTP | Gateway: `/doip/retrieve/{object_id}/{component_id}` |
 
 ## Supported operations
@@ -153,7 +153,7 @@ Supported actions: `hello`, `list_ops`, `retrieve`, `versions`, `update`,
 ```python
 from doip_client import StrictDOIPClient
 
-client = StrictDOIPClient(host="doip.episerve.zib.de", port=3567, use_tls=False)
+client = StrictDOIPClient(host="doip.episerve.zib.de", port=3567, use_tls=True)  # the public endpoint is TLS-only
 hello = client.hello()
 metadata = client.retrieve("Q1748526042817").metadata_blocks
 ```
@@ -161,3 +161,11 @@ metadata = client.retrieve("Q1748526042817").metadata_blocks
 ## TLS
 
 Place `certs/server.crt` and `certs/server.key` (PEM) to enable TLS automatically. Without them the server speaks plaintext. The compat listener on port 3568 uses the same TLS setting.
+
+## Compat listener and doipy
+
+The compat listener on port 3568 frames each JSON segment with a 4-byte big-endian length and ends a request
+with a zero length. `doipy` (via `doip-sdk`) uses the standard DOIP 2.0 text framing instead: each JSON segment
+ends with a `#` line, an empty `#` line ends the request, and byte segments start with `@`. A `doipy` request to
+port 3568 therefore hangs: the server reads the first four bytes of the JSON as a ~2 GB length and waits. No
+client in this repository uses the compat framing.

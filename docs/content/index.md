@@ -9,7 +9,7 @@ Strict DOIP v2.0 implementation for FAIR Digital Objects (FDOs), backed by lakeF
 
 ## Capabilities at a glance
 - Binary DOIP listener on TCP (`3567` by default) with automatic TLS when `certs/server.crt` and `certs/server.key` exist.
-- Compatibility JSON-segment listener on `port + 1` (`3568` by default) for doipy-style clients.
+- Compatibility listener on `port + 1` (`3568` by default) with custom length-prefixed JSON segments (not doipy-compatible).
 - Operations: `hello`, `retrieve`, `invoke`, plus a `list_ops` helper.
 - lakeFS-backed component retrieval and workflow-driven derived components.
 

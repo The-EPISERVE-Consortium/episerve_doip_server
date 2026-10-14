@@ -10,7 +10,7 @@ Asyncio-based TCP server implementing strict DOIP v2.0 framing. Supported operat
 
 Two listeners start together:
 - Binary DOIP: default `3567` (set with `--port`).
-- Compatibility JSON-segment listener: `port + 1` (default `3568`) for doipy-style clients.
+- Compatibility listener: `port + 1` (default `3568`), using custom length-prefixed JSON segments (not doipy-compatible; see below).
 If `certs/server.crt` and `certs/server.key` exist, both listeners start with TLS; otherwise they stay plaintext.
 
 ## Entrypoint
@@ -51,4 +51,8 @@ Configuration order of precedence: `config.yaml` → environment variables (`FDO
 See `doip_server/protocol.py` for framing details.
 
 ## Compatibility listener
-The companion listener on `port + 1` accepts doipy-style length-prefixed JSON segments, converts them to DOIP requests, and streams back segments. The first segment is a JSON status block followed by optional component payloads.
+The companion listener on `port + 1` accepts length-prefixed JSON segments, converts them to DOIP requests, and streams back segments. The first segment is a JSON status block followed by optional component payloads.
+
+Framing: each segment is a 4-byte big-endian length followed by that many bytes, and a zero length ends the message.
+
+This is **not** the DOIP 2.0 text framing that `doipy`/`doip-sdk` use (a JSON segment followed by a `#` line, an empty `#` line to end the message, and `@` for byte segments). A `doipy` request hangs on this port, because the first four bytes of its JSON are read as a ~2 GB length. No client in this repository uses this listener.
