@@ -290,7 +290,11 @@ def _maybe_create_ssl_context() -> ssl.SSLContext | None:
 async def handle_compat_connection(
     registry: object_registry.ObjectRegistry, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
 ):
-    """Handle doipy JSON-segmented requests and bridge to DOIP handlers.
+    """Handle compat requests (length-prefixed JSON segments) and bridge to DOIP handlers.
+
+    Each segment is a 4-byte big-endian length plus payload; a zero length ends the
+    message. This is not the DOIP 2.0 text framing used by doipy/doip-sdk ('#'/'@'
+    lines), so doipy clients are not supported here.
 
     Args:
         registry: Object registry instance.
@@ -330,7 +334,7 @@ async def handle_compat_connection(
 
 
 async def _process_compat_request(body: dict, registry: object_registry.ObjectRegistry) -> list[bytes]:
-    """Translate a doipy JSON request into a DOIP handler response.
+    """Translate a compat JSON request into a DOIP handler response.
 
     Args:
         body: Parsed JSON body with compat fields.
@@ -388,7 +392,7 @@ async def _process_compat_request(body: dict, registry: object_registry.ObjectRe
 
 
 def _compat_response_from_doip(msg: protocol.DOIPMessage) -> list[bytes]:
-    """Convert a DOIPMessage response into doipy-style segments.
+    """Convert a DOIPMessage response into length-prefixed compat segments.
 
     Args:
         msg: DOIPMessage response to convert.
