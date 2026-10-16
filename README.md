@@ -122,6 +122,44 @@ PYTHONPATH=. python -m client_cli.main --host localhost --no-tls --action update
 
 Component IDs are exact storage names — no extension is added automatically.
 
+### Version and update check
+
+Released binaries are stamped with their git tag at build time, so the client
+knows its own version:
+
+```bash
+episerve-doip-cli --cli-version
+episerve-doip-cli 0.0.6
+```
+
+The version is printed to stdout; the update status goes to stderr. Exit codes:
+`0` up to date, `1` a newer release exists, `2` the lookup failed. The version
+is reported even when the lookup fails. If the repository cannot be reached,
+the status line is simply `Cannot reach github.com to check for updates.` and
+the version is still printed.
+
+```bash
+# usable in a script or CI gate
+if episerve-doip-cli --cli-version; then echo current; fi
+```
+
+When started interactively, the client also checks once a day whether a newer
+release exists and prints a notice on stderr (never stdout, so scripted and
+`--force-json-output` use is unaffected). Prereleases (`rc` tags) are never
+offered, and the check is skipped entirely for development builds
+(`0.0.0.dev0`), in CI, and when stderr is not a terminal.
+
+```bash
+episerve-doip-cli --no-cli-update-check  # skip the startup check for this run
+EPISERVE_NO_CLI_UPDATE_CHECK=1 episerve-doip-cli --action hello
+```
+
+The check queries the repository's git ref endpoint (the one `git ls-remote`
+uses), which needs no token and is not subject to the GitHub API rate limit.
+It is best-effort: a missing network, a timeout or an unparseable response all
+count as "no update" and never affect the command you actually ran. The result
+is cached for 24 h under `~/.cache/episerve/` (`%LOCALAPPDATA%` on Windows).
+
 ### Machine-readable output
 
 Pass `--force-json-output` to make the CLI print exactly one JSON envelope on

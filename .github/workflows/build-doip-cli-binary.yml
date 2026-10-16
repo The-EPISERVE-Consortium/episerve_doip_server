@@ -29,6 +29,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Stamp version
+        shell: bash
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            v*)  VERSION="${GITHUB_REF_NAME#v}" ;;
+            *)   VERSION="0.0.0.dev0+${GITHUB_SHA::7}" ;;
+          esac
+          printf '__version__ = "%s"\n' "$VERSION" > doip_shared/version.py
+          echo "Stamped doip_shared/version.py with $VERSION"
+
       - name: Create venv (Unix)
         if: runner.os != 'Windows'
         run: python -m venv venv

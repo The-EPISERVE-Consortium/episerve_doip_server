@@ -18,6 +18,9 @@ from argparse import (
 
 from doip_client import StrictDOIPClient
 from doip_shared.constants import MSG_TYPE_ERROR
+from doip_shared.version import __version__
+
+from . import update_check
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -146,6 +149,54 @@ def _emit_json(action: str, object_id: str | None, ok: bool,
     else:
         payload["error"] = error
     print(json.dumps(payload, indent=2))
+
+
+def _maybe_announce_update(args) -> None:
+    """Print an update notice on stderr when a newer release exists.
+
+    Best-effort and silent on every failure, so it never affects the action's
+    output or exit code.
+    """
+    if not update_check.should_check(
+        force_json_output=args.force_json_output,
+        no_cli_update_check=args.no_cli_update_check,
+    ):
+        return
+    info = update_check.check_for_update(__version__)
+    if info:
+        print(update_check.format_notice(info), file=sys.stderr)
+
+
+def _run_cli_version() -> int:
+    """Handle ``--cli-version``: print the version, then report on updates.
+
+    The version always goes to stdout so it can be captured; the update status
+    goes to stderr. As this is the only way to check for updates outside an
+    interactive run, it queries the network directly (bypassing the cache) and
+    reports failures rather than staying silent.
+
+    Returns:
+        int: 0 when up to date (or un-stamped), 1 when a newer release exists,
+        2 when the lookup itself failed.
+    """
+    print(f"episerve-doip-cli {__version__}")
+
+    if update_check._is_placeholder(update_check.parse_version(__version__)):
+        print(
+            "No update check was performed: this is a development build.",
+            file=sys.stderr,
+        )
+        return 0
+    try:
+        info = update_check.check_explicitly(__version__)
+    except Exception:
+        print(f"Cannot reach {update_check.HOST} to check for updates.", file=sys.stderr)
+        return 2
+    if info:
+        print(update_check.format_notice(info), file=sys.stderr)
+        return 1
+    print("This is the latest release.", file=sys.stderr)
+    return 0
 
 
 def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object]:
@@ -321,6 +372,21 @@ def main(argv: list[str] | None = None) -> int:
         default="latest",
         help="Commit ID to retrieve (retrieve action only). Defaults to latest.",
     )
+    parser.add_argument(
+        "--cli-version",
+        action="store_true",
+        default=False,
+        help="Print this client's version, check whether a newer release exists, "
+             "and exit (exit codes: 0 up to date, 1 update available, "
+             "2 check failed).",
+    )
+    parser.add_argument(
+        "--no-cli-update-check",
+        action="store_true",
+        default=False,
+        help="Skip the automatic startup update check (also "
+             f"{update_check.ENV_OPT_OUT}=1).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -331,6 +397,9 @@ def main(argv: list[str] | None = None) -> int:
             _range_kwargs(args)
         except ValueError as exc:
             parser.error(str(exc))
+
+    if args.cli_version:
+        return _run_cli_version()
 
     if args.force_json_output:
         logging.disable(logging.INFO)  # keep WARNING+ on stderr, drop the DEBUG/INFO stream
@@ -352,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
         print("options:")
         print("  -h, --help            show extended help and exit")
         return 1
+
+    _maybe_announce_update(args)
 
     client = StrictDOIPClient(
         host=args.host,
