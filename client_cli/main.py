@@ -16,11 +16,10 @@ from argparse import (
 )
 
 
+from client_cli import update_check
 from doip_client import StrictDOIPClient
 from doip_shared.constants import MSG_TYPE_ERROR
 from doip_shared.version import __version__
-
-from . import update_check
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -54,8 +53,6 @@ class RawDescriptionDefaultsHelpFormatter(
     ArgumentDefaultsHelpFormatter,
 ):
     """Argument formatter combining defaults with raw description rendering."""
-
-    pass
 
 
 def _resolve_cli_read_token(explicit_token: str | None) -> str | None:
@@ -239,8 +236,11 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
             if not r.component_blocks:
                 raise ValueError(f"Component {args.component} not found.")
             block = r.component_blocks[0]
-            with open(args.output, "wb") as fh:
-                fh.write(block.content)
+            try:
+                with open(args.output, "wb") as fh:
+                    fh.write(block.content)
+            except OSError as exc:
+                raise ValueError(f"Could not write {args.output}: {exc}") from exc
             return oid, {
                 "saved_to": args.output,
                 "media_type": block.media_type,
@@ -264,8 +264,11 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
         update_token = _resolve_cli_update_token(args.update_token)
         if not update_token:
             raise ValueError("Update authorization requires --update-token or DOIP_UPDATE_TOKEN.")
-        with open(args.input, "rb") as fh:
-            content = fh.read()
+        try:
+            with open(args.input, "rb") as fh:
+                content = fh.read()
+        except OSError as exc:
+            raise ValueError(f"Could not read {args.input}: {exc}") from exc
         media_type = args.media_type or "application/octet-stream"
         r = client.update_component(
             args.object_id, args.component, content,
@@ -471,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.output:
                     with open(args.output, "wb") as f:
                         f.write(content)
-                    logging.getLogger().info(f"Wrote to file %s - contains media type '%s' ", args.output, media_type )
+                    logging.getLogger().info("Wrote to file %s - contains media type '%s' ", args.output, media_type )
                     return 0
                 # stdout binary
                 sys.stdout.buffer.write(content)
@@ -549,6 +552,10 @@ def main(argv: list[str] | None = None) -> int:
             f"Error contacting DOIP server {args.host}:{args.port}: {exc}\n"
         )
         return 1
+
+    # Unreachable while --action is restricted to the choices above, but keeps
+    # the declared return type honest if that ever changes.
+    return 1
 
 
 if __name__ == "__main__":

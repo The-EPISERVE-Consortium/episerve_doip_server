@@ -1,7 +1,11 @@
 """Tests for the CLI's startup update check."""
 
 import json
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -362,3 +366,27 @@ def test_network_failure_does_not_break_action(monkeypatch, capsys, cache_file):
     assert rc == 0
     assert "network down" not in captured.err
     assert json.loads(captured.out) == {"status": "ok"}
+
+
+# --- packaging -------------------------------------------------------------
+
+def test_main_runs_as_a_script_not_only_as_a_package():
+    """PyInstaller runs ``client_cli/main.py`` as a script, not as a package.
+
+    In that context ``__package__`` is empty, so any relative import in the
+    entrypoint raises ImportError at startup and the binary is dead on arrival.
+    This shipped once (v0.0.7), so it is covered explicitly: importing the
+    module as ``__main__`` via a file path reproduces the frozen layout.
+    """
+    entrypoint = Path(cli.__file__).resolve()
+    result = subprocess.run(
+        [sys.executable, str(entrypoint), "--cli-version"],
+        capture_output=True,
+        text=True,
+        cwd=entrypoint.parent.parent,
+        env={**os.environ, "PYTHONPATH": str(entrypoint.parent.parent)},
+    )
+    assert "ImportError" not in result.stderr, result.stderr
+    assert "attempted relative import" not in result.stderr, result.stderr
+    assert result.returncode == 0, result.stderr
+    assert "episerve-doip-cli" in result.stdout
