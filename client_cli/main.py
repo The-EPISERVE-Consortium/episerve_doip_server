@@ -111,6 +111,20 @@ def _raise_if_denied(response) -> None:
         raise ValueError("Access denied: this object is restricted. Pass --read-token or set DOIP_READ_TOKEN.")
 
 
+def _raise_if_error(response) -> None:
+    """Raise when the server answered with an error message (for example an unknown object).
+
+    The server reports such errors as a response of type ``MSG_TYPE_ERROR`` whose first metadata block is
+    ``{"error": <kind>, "message": <text>}``; without this check the CLI would report them as a success.
+    """
+    _raise_if_denied(response)
+    if response.header.msg_type != MSG_TYPE_ERROR:
+        return
+    block = response.metadata_blocks[0] if response.metadata_blocks else {}
+    kind, message = block.get("error"), block.get("message")
+    raise ValueError(f"{kind or 'Error'}: {message}" if message else str(kind or "The server returned an error."))
+
+
 def _resolve_cli_update_token(explicit_token: str | None) -> str | None:
     """Resolve the update token from CLI input or the environment.
 
@@ -220,6 +234,7 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
         return oid, client.purge(args.object_id)
     if action == "versions":
         r = client.retrieve(args.object_id, "versions")
+        _raise_if_error(r)
         versions = r.metadata_blocks[0].get("versions", []) if r.metadata_blocks else []
         return oid, {"versions": versions}
     if action == "retrieve":
@@ -231,7 +246,7 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
                 )
             r = client.retrieve(args.object_id, component_id=args.component, version=args.version,
                                 token=_resolve_cli_read_token(args.read_token), **_range_kwargs(args))
-            _raise_if_denied(r)
+            _raise_if_error(r)
             _raise_if_range_unsatisfiable(r)
             if not r.component_blocks:
                 raise ValueError(f"Component {args.component} not found.")
@@ -248,6 +263,7 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
                 **_range_info(r),
             }
         r = client.retrieve(args.object_id)
+        _raise_if_error(r)
         return oid, {"metadata_blocks": r.metadata_blocks}
     if action == "invoke":
         try:
@@ -255,6 +271,7 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
         except Exception:
             params = {}
         r = client.invoke(args.object_id, args.workflow, params=params)
+        _raise_if_error(r)
         return oid, {"metadata_blocks": r.metadata_blocks}
     if action == "update":
         if not args.component:
@@ -274,6 +291,7 @@ def _run_json_action(client: StrictDOIPClient, args) -> tuple[str | None, object
             args.object_id, args.component, content,
             media_type=media_type, update_token=update_token,
         )
+        _raise_if_error(r)
         return oid, {"metadata_blocks": r.metadata_blocks}
     raise ValueError(f"Action {action!r} is not supported with --force-json-output.")
 
@@ -459,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.component:
                 r = client.retrieve(args.object_id, component_id=args.component, version=args.version,
                                     token=_resolve_cli_read_token(args.read_token), **_range_kwargs(args))
-                _raise_if_denied(r)
+                _raise_if_error(r)
                 try:
                     _raise_if_range_unsatisfiable(r)
                 except ValueError as exc:
@@ -483,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
 
             # Show only meta data - no binary data
             r = client.retrieve(args.object_id)
+            _raise_if_error(r)
             print("Metadata:")
             print(json.dumps(r.metadata_blocks, indent=2))
 
@@ -490,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.action == "versions":
             r = client.retrieve(args.object_id, "versions")
+            _raise_if_error(r)
             if not r.metadata_blocks:
                 logging.getLogger().error("Object %s not found.", args.object_id)
                 return 1
@@ -503,6 +523,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:
                 p = {}
             r = client.invoke(args.object_id, args.workflow, params=p)
+            _raise_if_error(r)
             print(json.dumps(r.metadata_blocks, indent=2))
             return 0
 
@@ -531,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
                 media_type=media_type,
                 update_token=update_token,
             )
+            _raise_if_error(r)
             print(json.dumps(r.metadata_blocks, indent=2))
             return 0
 

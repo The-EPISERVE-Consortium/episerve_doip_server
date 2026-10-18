@@ -181,7 +181,7 @@ PYTHONPATH=. python -m client_cli.main --host localhost --no-tls \
 ```
 
 On failure the envelope is `{"action": ..., "object_id": ..., "ok": false, "error": "..."}`
-and the exit code is `1`. In this mode a component retrieve (`--component`)
+and the exit code is `1`. An error message from the server (for example an unknown object, `ProtocolError: No FDO metadata file found for Q123 …`) is a failure too, with the same output in and without this mode. In this mode a component retrieve (`--component`)
 requires `--output` — binary content cannot share stdout with the envelope.
 Supported actions: `hello`, `list_ops`, `retrieve`, `versions`, `update`,
 `invoke`, `purge` (`demo` is interactive-only).

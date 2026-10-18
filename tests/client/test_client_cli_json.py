@@ -8,6 +8,7 @@ from client_cli import main as cli
 from doip_client.client import StrictDOIPClient
 from doip_client.messages import DoipResponse
 from doip_client.protocol import Header
+from doip_shared.constants import MSG_TYPE_ERROR
 
 
 def _resp(metadata_blocks=None, component_blocks=None):
@@ -138,3 +139,57 @@ def test_no_flag_keeps_legacy_metadata_prefix(monkeypatch, capsys):
 
     assert rc == 0
     assert "Metadata:" in capsys.readouterr().out
+
+
+def _error_resp(kind="ProtocolError", message="No FDO metadata file found for Q123 in any configured repo"):
+    return DoipResponse(
+        header=Header(2, MSG_TYPE_ERROR, 0, 0, 0, 0),
+        metadata_blocks=[{"error": kind, "message": message}],
+        component_blocks=[],
+        workflow_blocks=[],
+    )
+
+
+@pytest.mark.parametrize("action", ["retrieve", "versions"])
+def test_server_error_becomes_failure_envelope(monkeypatch, capsys, action):
+    """An error message from the server (an unknown object) is reported as ok:false with exit code 1."""
+    monkeypatch.setattr(StrictDOIPClient, "retrieve", lambda self, oid, *a, **k: _error_resp())
+
+    rc = cli.main(["--no-tls", "--force-json-output", "--action", action, "--object-id", "Q123"])
+
+    assert rc == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False and out["object_id"] == "Q123"
+    assert out["error"].startswith("ProtocolError: No FDO metadata file found for Q123")
+
+
+def test_server_error_on_a_component_retrieve_is_a_failure(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(StrictDOIPClient, "retrieve", lambda self, oid, *a, **k: _error_resp())
+
+    rc = cli.main(["--no-tls", "--force-json-output", "--action", "retrieve", "--object-id", "Q123",
+                   "--component", "x.parquet", "--output", str(tmp_path / "x.parquet")])
+
+    assert rc == 1 and "No FDO metadata file" in json.loads(capsys.readouterr().out)["error"]
+    assert not (tmp_path / "x.parquet").exists()
+
+
+def test_server_error_is_a_failure_without_json_mode_too(monkeypatch, capsys):
+    monkeypatch.setattr(StrictDOIPClient, "retrieve", lambda self, oid, *a, **k: _error_resp())
+
+    rc = cli.main(["--no-tls", "--action", "retrieve", "--object-id", "Q123"])
+
+    captured = capsys.readouterr()
+    assert rc == 1 and "No FDO metadata file" in captured.err and "Metadata:" not in captured.out
+
+
+def test_invoke_and_update_report_server_errors(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(StrictDOIPClient, "invoke", lambda self, oid, *a, **k: _error_resp("WorkflowError", "no such workflow"))
+    rc = cli.main(["--no-tls", "--force-json-output", "--action", "invoke", "--object-id", "Q123", "--workflow", "x"])
+    assert rc == 1 and json.loads(capsys.readouterr().out)["error"] == "WorkflowError: no such workflow"
+
+    source = tmp_path / "in.txt"
+    source.write_text("x")
+    monkeypatch.setattr(StrictDOIPClient, "update_component", lambda self, *a, **k: _error_resp("ProtocolError", "bad"))
+    rc = cli.main(["--no-tls", "--force-json-output", "--action", "update", "--object-id", "Q123",
+                   "--component", "c", "--input", str(source), "--update-token", "t"])
+    assert rc == 1 and json.loads(capsys.readouterr().out)["error"] == "ProtocolError: bad"
