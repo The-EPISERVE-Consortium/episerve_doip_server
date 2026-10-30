@@ -47,15 +47,22 @@ class ObjectRegistry:
         self._manifest_cache: Dict[str, tuple[Dict, str, float]] = {}  # pid -> (manifest, repo, fetched_at)
         self._lock = asyncio.Lock()
 
-    async def fetch_fdo_object(self, pid: str) -> Dict:
+    async def fetch_fdo_object(self, pid: str, version: str | None = None) -> Dict:
         """Fetch and cache the FDO JSON-LD for a given PID.
 
         Args:
             pid: PID/QID to retrieve.
+            version: Commit ID to read the FDO at (not cached), or None for the current one.
 
         Returns:
             Dict: Manifest JSON-LD payload for the PID.
+
+        Raises:
+            KeyError: No FDO for the PID (at that version).
         """
+        if version and version != "latest":
+            manifest, _ = await storage_lakefs.get_fdo_metadata(pid.upper(), version=version)
+            return manifest
         manifest, _ = await self._resolve(pid)
         return manifest
 

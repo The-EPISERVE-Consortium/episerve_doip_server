@@ -223,7 +223,7 @@ async def handle_retrieve(msg: DOIPMessage, registry: object_registry.ObjectRegi
             ],
         )
 
-    fdo_json = await registry.fetch_fdo_object(pid)
+    fdo_json = await registry.fetch_fdo_object(pid, version=version) if version else await registry.fetch_fdo_object(pid)
     return DOIPMessage(
         version=protocol.DOIP_VERSION,
         msg_type=protocol.MSG_TYPE_RESPONSE,

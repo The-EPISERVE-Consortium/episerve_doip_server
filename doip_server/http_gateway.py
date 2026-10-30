@@ -246,11 +246,12 @@ async def list_versions(object_id: str, limit: int | None = Query(None), include
 
 
 @app.get("/doip/retrieve/{object_id}")
-async def retrieve_metadata(object_id: str):
+async def retrieve_metadata(object_id: str, version: str = Query("latest")):
     """Return the RO-Crate metadata for an object as JSON.
 
     Args:
         object_id: PID/QID of the target object.
+        version: Commit ID to return the metadata at (from ``/doip/versions/<id>``), or "latest".
 
     Returns:
         dict: RO-Crate metadata from the DOIP server.
@@ -258,7 +259,7 @@ async def retrieve_metadata(object_id: str):
     log.info("HTTP metadata requested", extra={"object_id": object_id})
     client = _client()
     try:
-        response = await asyncio.to_thread(client.retrieve, object_id)
+        response = await asyncio.to_thread(client.retrieve, object_id, None, version)
     except Exception as exc:
         log.exception("DOIP backend error during metadata retrieve", extra={"object_id": object_id})
         raise HTTPException(status_code=502, detail=f"DOIP backend error: {exc}")

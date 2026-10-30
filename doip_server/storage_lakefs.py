@@ -402,11 +402,12 @@ async def reset_uncommitted_object(object_path: str, repo: str, branch: str | No
     await asyncio.to_thread(_reset)
 
 
-async def get_fdo_metadata(qid: str) -> tuple[dict, str]:
+async def get_fdo_metadata(qid: str, version: str | None = None) -> tuple[dict, str]:
     """Fetch FDO metadata for a QID from each configured repo.
 
     Args:
         qid: Object identifier/QID.
+        version: Commit ID to read the metadata at, or None for the current branch.
 
     Returns:
         tuple[dict, str]: Parsed metadata JSON and the repo it was found in.
@@ -415,7 +416,7 @@ async def get_fdo_metadata(qid: str) -> tuple[dict, str]:
         KeyError: If no metadata file is found in any configured repo.
     """
     shard = shard_qid(qid)
-    branch = _branch()
+    branch = version if (version and version != "latest") else _branch()
     key = f"{branch}/{shard}/{qid}.fdo.json"
     for repo in _repos():
         log.info("Fetching metadata repo=%s key=%s", repo, key)

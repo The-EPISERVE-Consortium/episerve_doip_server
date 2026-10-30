@@ -108,3 +108,37 @@ def test_ttl_from_environment(monkeypatch):
         else:
             monkeypatch.setenv("DOIP_MANIFEST_CACHE_TTL", raw)
         assert object_registry.ObjectRegistry()._ttl == expected
+
+
+@pytest.mark.asyncio
+async def test_fdo_at_a_version_is_read_at_that_commit_and_not_cached(monkeypatch):
+    reads = []
+
+    async def fake(qid, version=None):
+        reads.append((qid, version))
+        return {"kernel": {"modified": version or "current"}}, "repo"
+
+    monkeypatch.setattr(storage_lakefs, "get_fdo_metadata", fake)
+    registry = object_registry.ObjectRegistry(ttl=300, clock=Clock())
+    assert (await registry.fetch_fdo_object("q1", version="abc"))["kernel"]["modified"] == "abc"
+    assert (await registry.fetch_fdo_object("Q1"))["kernel"]["modified"] == "current"
+    assert (await registry.fetch_fdo_object("Q1", version="abc"))["kernel"]["modified"] == "abc"
+    assert reads == [("Q1", "abc"), ("Q1", None), ("Q1", "abc")]
+
+
+@pytest.mark.asyncio
+async def test_storage_reads_the_fdo_at_the_commit(monkeypatch):
+    import io
+    keys = []
+
+    class FakeS3:
+        def get_object(self, Bucket, Key):
+            keys.append(Key)
+            return {"Body": io.BytesIO(b"{}")}
+
+    monkeypatch.setattr(storage_lakefs, "_client", lambda: FakeS3())
+    monkeypatch.setattr(storage_lakefs, "_repos", lambda: ["data-processed"])
+    await storage_lakefs.get_fdo_metadata("Q1792274309877", version="c0ffee")
+    await storage_lakefs.get_fdo_metadata("Q1792274309877")
+    assert keys[0].startswith("c0ffee/") and keys[0].endswith("/Q1792274309877.fdo.json")
+    assert keys[1].startswith(storage_lakefs._branch() + "/")

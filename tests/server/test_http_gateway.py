@@ -92,3 +92,18 @@ def test_invalid_signature_gives_403_not_401(gateway):
 def test_head_with_signed_link_is_served(gateway):
     client, _ = gateway
     assert client.head(URL + "?exp=4102444800&sig=validsig").status_code == 200
+
+
+def test_metadata_at_a_version_is_passed_through(monkeypatch):
+    calls = []
+
+    class Meta:
+        def retrieve(self, object_id, component_id=None, version=None, **_):
+            calls.append((object_id, component_id, version))
+            return _response(MSG_TYPE_RESPONSE, metadata=[{"kernel": {"modified": version}}])
+
+    monkeypatch.setattr(http_gateway, "_client", lambda use_tls=None: Meta())
+    client = TestClient(http_gateway.app)
+    assert client.get("/doip/retrieve/Q1", params={"version": "c0ffee"}).json() == {"kernel": {"modified": "c0ffee"}}
+    assert client.get("/doip/retrieve/Q1").status_code == 200
+    assert calls == [("Q1", None, "c0ffee"), ("Q1", None, "latest")]
